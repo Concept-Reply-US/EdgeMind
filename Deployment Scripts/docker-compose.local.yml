@@ -1,0 +1,63 @@
+# EdgeMind Local Development - Docker Compose
+# Usage: ./local-deploy.sh (recommended) or docker compose -f docker-compose.local.yml up -d
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    container_name: edgemind-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_ADMIN_USER:-admin}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD:?INFLUXDB_ADMIN_PASSWORD is required - run ./local-deploy.sh to generate}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG:-proveit}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET:-factory}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_ADMIN_TOKEN:?INFLUXDB_ADMIN_TOKEN is required - run ./local-deploy.sh to generate}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Deployment Scripts/Dockerfile
+    container_name: edgemind-backend
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=${NODE_ENV:-development}
+      # MQTT Configuration
+      - MQTT_HOST=${MQTT_HOST:-mqtt://virtualfactory.proveit.services:1883}
+      - MQTT_USERNAME=${MQTT_USERNAME:-proveitreadonly}
+      - MQTT_PASSWORD=${MQTT_PASSWORD:-}
+      # InfluxDB Configuration (uses internal Docker network)
+      - INFLUXDB_URL=http://influxdb:8086
+      - INFLUXDB_TOKEN=${INFLUXDB_ADMIN_TOKEN}
+      - INFLUXDB_ORG=${INFLUXDB_ORG:-proveit}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-factory}
+      # AI Configuration (AWS Bedrock)
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_PROFILE=${AWS_PROFILE:-default}
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-20250514-v1:0}
+      # Optional: Direct Anthropic API (if not using Bedrock)
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Optional: Disable AI insights for testing
+      - DISABLE_INSIGHTS=${DISABLE_INSIGHTS:-false}
+    volumes:
+      # Mount AWS credentials for Bedrock access
+      - ${HOME}/.aws:/home/nodejs/.aws:ro
+    depends_on:
+      influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  influxdb-data:
+    name: edgemind-influxdb-data

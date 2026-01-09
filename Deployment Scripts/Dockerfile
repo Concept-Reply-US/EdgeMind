@@ -13,7 +13,7 @@ RUN npm ci --only=production
 
 # Copy application code
 COPY server.js ./
-COPY factory-live.html ./
+COPY index.html ./
 COPY factory-command-center.html ./
 
 # Create non-root user
