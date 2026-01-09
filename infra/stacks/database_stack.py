@@ -88,10 +88,11 @@ class DatabaseStack(Stack):
         self.file_system.grant_root_access(task_definition.task_role.grant_principal)
 
         # CloudWatch Logs
+        # SECURITY: Retention extended to 30 days for security incident investigation
         log_group = logs.LogGroup(
             self, "InfluxDBLogGroup",
             log_group_name=f"/ecs/{project_name}-{environment}-influxdb",
-            retention=logs.RetentionDays.ONE_WEEK,
+            retention=logs.RetentionDays.ONE_MONTH,
             removal_policy=RemovalPolicy.DESTROY
         )
 

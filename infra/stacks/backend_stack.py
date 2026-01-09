@@ -76,7 +76,18 @@ class BackendStack(Stack):
             stickiness_cookie_name="EDGEMIND_SESSION"
         )
 
-        # HTTP Listener (no certificate available yet)
+        # HTTP Listener
+        # SECURITY TODO: Add HTTPS listener with ACM certificate for production
+        # To add HTTPS:
+        # 1. Create ACM certificate for your domain
+        # 2. Add HTTPS listener:
+        #    https_listener = self.alb.add_listener("HTTPSListener",
+        #        port=443, protocol=elbv2.ApplicationProtocol.HTTPS,
+        #        certificates=[certificate],
+        #        default_action=elbv2.ListenerAction.forward([target_group]))
+        # 3. Redirect HTTP to HTTPS:
+        #    http_listener.add_action("HTTPRedirect",
+        #        action=elbv2.ListenerAction.redirect(protocol="HTTPS", port="443"))
         http_listener = self.alb.add_listener(
             "HTTPListener",
             port=80,
@@ -113,10 +124,11 @@ class BackendStack(Stack):
         influxdb_secret.grant_read(task_definition.task_role)
 
         # CloudWatch Logs
+        # SECURITY: Retention extended to 30 days for security incident investigation
         log_group = logs.LogGroup(
             self, "BackendLogGroup",
             log_group_name=f"/ecs/{project_name}-{environment}-backend",
-            retention=logs.RetentionDays.ONE_WEEK,
+            retention=logs.RetentionDays.ONE_MONTH,
             removal_policy=RemovalPolicy.DESTROY
         )
 
