@@ -1667,6 +1667,26 @@ app.get('/api/equipment/states', async (req, res) => {
 // NEW: OEE lines endpoint - returns line-level OEE grouped by enterprise/site/area
 app.get('/api/oee/lines', async (req, res) => {
   try {
+    // SECURITY: Validate enterprise parameter
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null) {
+      return res.status(400).json({ error: 'Invalid enterprise parameter' });
+    }
+
+    // Handle Enterprise C specially - it doesn't use OEE
+    if (enterprise === 'Enterprise C') {
+      return res.json({
+        lines: [],
+        message: 'Enterprise C (Bioprocessing) uses ISA-88 batch control metrics instead of OEE',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Build query with optional enterprise filter
+    const enterpriseFilter = (enterprise && enterprise !== 'ALL')
+      ? `|> filter(fn: (r) => r.enterprise == "${sanitizeInfluxIdentifier(enterprise)}")`
+      : '';
+
     const fluxQuery = `
       from(bucket: "${CONFIG.influxdb.bucket}")
         |> range(start: -24h)
@@ -1678,6 +1698,7 @@ app.get('/api/oee/lines', async (req, res) => {
           r._measurement == "metric_oee"
         )
         |> filter(fn: (r) => r._value > 0.1 and r._value <= 150)
+        ${enterpriseFilter}
         |> group(columns: ["enterprise", "site", "area"])
         |> mean()
         |> yield(name: "mean_oee_by_line")

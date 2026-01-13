@@ -1916,8 +1916,30 @@
                     // Populate equipment states map
                     state.equipmentStates.clear();
                     data.states.forEach(equipment => {
-                        state.equipmentStates.set(equipment.id, equipment);
+                        // Map API response to expected format
+                        // API returns: enterprise, site, machine, state, stateName, color, reason
+                        // Frontend expects: id, name, state
+                        const key = `${equipment.enterprise}/${equipment.site}/${equipment.machine}`;
+                        state.equipmentStates.set(key, {
+                            id: key,
+                            name: equipment.machine,
+                            state: equipment.stateName || equipment.state,
+                            enterprise: equipment.enterprise,
+                            site: equipment.site,
+                            reason: equipment.reason,
+                            color: equipment.color
+                        });
                     });
+
+                    // Update summary counts from API response
+                    if (data.summary) {
+                        const runningEl = document.getElementById('state-running');
+                        const idleEl = document.getElementById('state-idle');
+                        const downEl = document.getElementById('state-down');
+                        if (runningEl) runningEl.textContent = data.summary.running || 0;
+                        if (idleEl) idleEl.textContent = data.summary.idle || 0;
+                        if (downEl) downEl.textContent = data.summary.down || 0;
+                    }
 
                     // Update the equipment state grid
                     updateEquipmentStateGrid();
@@ -1991,11 +2013,16 @@
         // Fetch line OEE from API
         async function fetchLineOEE(enterprise = 'ALL') {
             try {
-                const response = await fetch(`/api/oee/lines?enterprise=${encodeURIComponent(enterprise)}`);
+                const response = await fetch('/api/oee/lines');
                 const data = await response.json();
 
                 if (data.lines && Array.isArray(data.lines)) {
-                    renderLineOEEGrid(data.lines);
+                    // Filter by enterprise on client side (server returns all data)
+                    let filteredLines = data.lines;
+                    if (enterprise && enterprise !== 'ALL') {
+                        filteredLines = data.lines.filter(line => line.enterprise === enterprise);
+                    }
+                    renderLineOEEGrid(filteredLines);
                 } else {
                     const grid = document.getElementById('line-oee-grid');
                     if (grid) {
@@ -2027,9 +2054,17 @@
                 if (oee >= 85) statusClass = 'healthy';
                 else if (oee >= 70) statusClass = 'warning';
 
-                // Format breakdown if available
+                // Construct line name from available fields
+                // API returns: enterprise, site, line (area), oee
+                const lineName = line.name || `${line.site} - ${line.line || 'Line'}`;
+
+                // Format breakdown if available (check for null explicitly, not just undefined)
                 let breakdownHtml = '';
-                if (line.availability !== undefined && line.performance !== undefined && line.quality !== undefined) {
+                const hasAvailability = line.availability !== null && line.availability !== undefined;
+                const hasPerformance = line.performance !== null && line.performance !== undefined;
+                const hasQuality = line.quality !== null && line.quality !== undefined;
+
+                if (hasAvailability && hasPerformance && hasQuality) {
                     breakdownHtml = `
                         <div class="line-breakdown">
                             <div class="line-breakdown-item">
@@ -2049,8 +2084,8 @@
                 }
 
                 return `
-                    <div class="line-card ${statusClass}">
-                        <div class="line-name" title="${line.name}">${line.name}</div>
+                    <div class="line-card ${statusClass}" data-enterprise="${line.enterprise || ''}">
+                        <div class="line-name" title="${lineName}">${lineName}</div>
                         <div class="line-oee-value">${oee.toFixed(1)}%</div>
                         <div class="line-oee-bar">
                             <div class="line-oee-bar-fill" style="width: ${oee}%"></div>
