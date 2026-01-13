@@ -62,6 +62,17 @@ const schemaCache = {
   CACHE_TTL_MS: 5 * 60 * 1000 // 5 minutes
 };
 
+// Equipment state cache
+const equipmentStateCache = {
+  states: new Map(), // Map<equipmentKey, stateData>
+  CACHE_TTL_MS: 60 * 1000, // 1 minute
+  STATE_CODES: {
+    1: { name: 'DOWN', color: 'red', priority: 3 },
+    2: { name: 'IDLE', color: 'yellow', priority: 2 },
+    3: { name: 'RUNNING', color: 'green', priority: 1 }
+  }
+};
+
 /**
  * Sanitizes InfluxDB identifiers to prevent Flux query injection.
  * Removes potentially dangerous characters like quotes and backslashes.
@@ -71,6 +82,28 @@ const schemaCache = {
 function sanitizeInfluxIdentifier(identifier) {
   if (typeof identifier !== 'string') return '';
   return identifier.replace(/["\\]/g, '');
+}
+
+/**
+ * Formats a duration in milliseconds into a human-readable string.
+ * @param {number} durationMs - Duration in milliseconds
+ * @returns {string} Formatted duration (e.g., "2h 15m", "45s")
+ */
+function formatDuration(durationMs) {
+  const seconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
 }
 
 // =============================================================================
@@ -164,6 +197,65 @@ const MEASUREMENT_CLASSIFICATIONS = {
   counter: ['count', 'total', 'produced', 'rejected', 'scrap', 'waste', 'good'],
   timing: ['time', 'duration', 'cycle', 'downtime', 'uptime', 'runtime'],
   description: [] // Fallback for string values
+};
+
+// =============================================================================
+// ENTERPRISE DOMAIN CONTEXT
+// =============================================================================
+
+/**
+ * Domain-specific context for each enterprise.
+ * Provides industry knowledge and safety ranges for AI-powered insights.
+ */
+const ENTERPRISE_DOMAIN_CONTEXT = {
+  'Enterprise A': {
+    industry: 'Glass Manufacturing',
+    domain: 'glass',
+    equipment: {
+      'Furnace': { type: 'glass-furnace', normalTemp: [2650, 2750], unit: '°F' },
+      'ISMachine': { type: 'forming-machine', cycleTime: [8, 12], unit: 'sec' },
+      'Lehr': { type: 'annealing-oven', tempGradient: [1050, 400] }
+    },
+    criticalMetrics: ['temperature', 'gob_weight', 'defect_count'],
+    concerns: ['thermal_shock', 'crown_temperature', 'refractory_wear'],
+    safeRanges: {
+      'furnace_temp': { min: 2600, max: 2800, unit: '°F', critical: true },
+      'crown_temp': { min: 2400, max: 2600, unit: '°F' }
+    }
+  },
+  'Enterprise B': {
+    industry: 'Beverage Bottling',
+    domain: 'beverage',
+    equipment: {
+      'Filler': { type: 'bottle-filler', normalSpeed: [400, 600], unit: 'BPM' },
+      'Labeler': { type: 'labeling-machine', accuracy: 99.5 },
+      'Palletizer': { type: 'palletizing-robot', cycleTime: [10, 15] }
+    },
+    criticalMetrics: ['countinfeed', 'countoutfeed', 'countdefect', 'oee'],
+    concerns: ['line_efficiency', 'changeover_time', 'reject_rate'],
+    rawCounterFields: ['countinfeed', 'countoutfeed', 'countdefect'],
+    safeRanges: {
+      'reject_rate': { max: 2, unit: '%', warning: 1.5 },
+      'filler_speed': { min: 350, max: 650, unit: 'BPM' }
+    }
+  },
+  'Enterprise C': {
+    industry: 'Bioprocessing / Pharma',
+    domain: 'pharma',
+    batchControl: 'ISA-88',
+    equipment: {
+      'SUM': { type: 'single-use-mixer', phase: 'preparation' },
+      'SUB': { type: 'single-use-bioreactor', phase: 'cultivation' },
+      'CHROM': { type: 'chromatography', phase: 'purification' },
+      'TFF': { type: 'tangential-flow-filtration', phase: 'filtration' }
+    },
+    criticalMetrics: ['PV_percent', 'phase', 'batch_id'],
+    concerns: ['contamination', 'batch_deviation', 'sterility'],
+    safeRanges: {
+      'pH': { min: 6.8, max: 7.4, critical: true },
+      'dissolved_oxygen': { min: 30, max: 70, unit: '%' }
+    }
+  }
 };
 
 // =============================================================================
@@ -619,6 +711,54 @@ mqttClient.on('message', async (topic, message) => {
     console.log(`[SCHEMA] New measurement detected: ${measurement} from topic: ${topic}`);
   }
 
+  // Detect and cache equipment state changes
+  const topicLower = topic.toLowerCase();
+  if (topicLower.includes('state') || topicLower.includes('status')) {
+    const parts = topic.split('/');
+    if (parts.length >= 4) {
+      const enterprise = parts[0];
+      const site = parts[1];
+      const machine = parts[3];
+      const equipmentKey = `${enterprise}/${site}/${machine}`;
+
+      // Parse state value (expecting 1=DOWN, 2=IDLE, 3=RUNNING)
+      const stateValue = parseInt(payload);
+      if (!isNaN(stateValue) && equipmentStateCache.STATE_CODES[stateValue]) {
+        const stateInfo = equipmentStateCache.STATE_CODES[stateValue];
+        const existingState = equipmentStateCache.states.get(equipmentKey);
+
+        // Only update if state changed or first time seen
+        if (!existingState || existingState.state !== stateValue) {
+          const stateData = {
+            enterprise,
+            site,
+            machine,
+            state: stateValue,
+            stateName: stateInfo.name,
+            color: stateInfo.color,
+            reason: null, // Could be parsed from additional topics
+            lastUpdate: timestamp,
+            firstSeen: existingState ? existingState.firstSeen : timestamp
+          };
+
+          equipmentStateCache.states.set(equipmentKey, stateData);
+
+          // Broadcast state change to WebSocket clients
+          broadcastToClients({
+            type: 'equipment_state',
+            data: {
+              ...stateData,
+              durationMs: Date.now() - new Date(stateData.firstSeen).getTime(),
+              durationFormatted: formatDuration(Date.now() - new Date(stateData.firstSeen).getTime())
+            }
+          });
+
+          console.log(`[STATE] ${equipmentKey}: ${stateInfo.name}`);
+        }
+      }
+    }
+  }
+
   // Write to InfluxDB
   try {
     const point = parseTopicToInflux(topic, payload);
@@ -744,12 +884,40 @@ async function queryTrends() {
   });
 }
 
+/**
+ * Builds domain-specific context for Claude based on enterprises present in trends.
+ * @param {Array} trends - Trend data with enterprise information
+ * @returns {string} Formatted domain context
+ */
+function buildDomainContext(trends) {
+  // Extract unique enterprises from trends
+  const enterprises = [...new Set(trends.map(t => t.enterprise))];
+
+  const contextSections = enterprises
+    .filter(ent => ENTERPRISE_DOMAIN_CONTEXT[ent])
+    .map(ent => {
+      const ctx = ENTERPRISE_DOMAIN_CONTEXT[ent];
+      return `
+**${ent} (${ctx.industry})**
+- Critical Metrics: ${ctx.criticalMetrics.join(', ')}
+- Key Concerns: ${ctx.concerns.join(', ')}
+- Safe Ranges: ${Object.entries(ctx.safeRanges).map(([k, v]) =>
+  `${k}: ${v.min ? `${v.min}-` : ''}${v.max || ''} ${v.unit || ''}${v.critical ? ' (CRITICAL)' : ''}`
+).join(', ')}`;
+    });
+
+  return contextSections.length > 0
+    ? `\n## Enterprise Domain Knowledge\n${contextSections.join('\n')}\n`
+    : '';
+}
+
 async function analyzeTreesWithClaude(trends) {
   // Summarize trends for Claude
   const trendSummary = summarizeTrends(trends);
+  const domainContext = buildDomainContext(trends);
 
   const prompt = `You are an AI factory monitoring agent analyzing time-series trend data from a manufacturing facility.
-
+${domainContext}
 ## Current Trend Data (Last 5 Minutes, 1-Minute Aggregates)
 
 ${trendSummary}
@@ -761,6 +929,7 @@ Analyze these trends and provide:
 2. **Trends**: Key metrics that are rising, falling, or stable
 3. **Anomalies**: Any concerning patterns (sudden changes, values outside normal range)
 4. **Recommendations**: Actionable suggestions for operators
+5. **Enterprise Insights**: Specific insights for each enterprise based on domain knowledge
 
 Respond in JSON format:
 {
@@ -768,6 +937,11 @@ Respond in JSON format:
   "trends": [{"metric": "name", "direction": "rising|falling|stable", "change_percent": 0}],
   "anomalies": ["list of concerns"],
   "recommendations": ["list of actions"],
+  "enterpriseInsights": {
+    "Enterprise A": "glass manufacturing specific insight",
+    "Enterprise B": "beverage bottling specific insight",
+    "Enterprise C": "pharma bioprocessing specific insight"
+  },
   "severity": "low|medium|high",
   "confidence": 0.0-1.0
 }`;
@@ -1441,6 +1615,239 @@ app.get('/api/schema/hierarchy', async (req, res) => {
       message: error.message
     });
   }
+});
+
+// NEW: Equipment states endpoint - returns current equipment states
+app.get('/api/equipment/states', async (req, res) => {
+  try {
+    const now = Date.now();
+    const states = [];
+    const summary = { running: 0, idle: 0, down: 0, unknown: 0 };
+
+    // Convert Map to array with calculated durations
+    for (const [key, stateData] of equipmentStateCache.states.entries()) {
+      const durationMs = now - new Date(stateData.firstSeen).getTime();
+
+      states.push({
+        enterprise: stateData.enterprise,
+        site: stateData.site,
+        machine: stateData.machine,
+        state: stateData.state,
+        stateName: stateData.stateName,
+        color: stateData.color,
+        reason: stateData.reason,
+        durationMs,
+        durationFormatted: formatDuration(durationMs),
+        lastUpdate: stateData.lastUpdate
+      });
+
+      // Update summary counts
+      const stateName = stateData.stateName.toLowerCase();
+      if (summary.hasOwnProperty(stateName)) {
+        summary[stateName]++;
+      } else {
+        summary.unknown++;
+      }
+    }
+
+    res.json({
+      states,
+      summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Equipment states query error:', error);
+    res.status(500).json({
+      error: 'Failed to query equipment states',
+      message: error.message
+    });
+  }
+});
+
+// NEW: OEE lines endpoint - returns line-level OEE grouped by enterprise/site/area
+app.get('/api/oee/lines', async (req, res) => {
+  try {
+    const fluxQuery = `
+      from(bucket: "${CONFIG.influxdb.bucket}")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) =>
+          r._measurement == "OEE_Performance" or
+          r._measurement == "OEE_Availability" or
+          r._measurement == "OEE_Quality" or
+          r._measurement == "metric_oee"
+        )
+        |> filter(fn: (r) => r._value > 0.1 and r._value <= 150)
+        |> group(columns: ["enterprise", "site", "area"])
+        |> mean()
+        |> yield(name: "mean_oee_by_line")
+    `;
+
+    const lines = [];
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (o._value !== undefined && o.enterprise && o.site) {
+            let oee = o._value;
+            // Normalize to percentage
+            if (oee > 0 && oee <= 1.5) {
+              oee = oee * 100;
+            }
+            oee = Math.min(100, Math.max(0, oee));
+
+            lines.push({
+              enterprise: o.enterprise,
+              site: o.site,
+              line: o.area || 'unknown',
+              oee: parseFloat(oee.toFixed(1)),
+              // Infer component values (would need separate queries for actual values)
+              availability: null,
+              performance: null,
+              quality: null,
+              tier: 1 // Assume tier 1 since we're using direct OEE measurements
+            });
+          }
+        },
+        error(error) {
+          console.error('OEE lines query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    res.json({
+      lines,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('OEE lines endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to query OEE lines',
+      message: error.message
+    });
+  }
+});
+
+// NEW: Agent context endpoint - comprehensive data for agentic workflows
+// Uses Promise.allSettled() for resilience when InfluxDB or other services are unavailable
+app.get('/api/agent/context', async (req, res) => {
+  // Track data source availability
+  const dataSourceStatus = {
+    mqtt: mqttClient.connected,
+    influxdb: true // Assume true, will be set to false if queries fail
+  };
+
+  // Helper to extract result from Promise.allSettled
+  const extractResult = (result, defaultValue = null) => {
+    if (result.status === 'fulfilled') {
+      return { data: result.value, status: 'available' };
+    } else {
+      console.warn('Agent context partial failure:', result.reason?.message || result.reason);
+      dataSourceStatus.influxdb = false;
+      return { data: defaultValue, status: 'unavailable', error: result.reason?.message };
+    }
+  };
+
+  // Equipment states are in-memory, always available
+  const getEquipmentStates = () => {
+    const states = [];
+    const now = Date.now();
+    for (const [key, stateData] of equipmentStateCache.states.entries()) {
+      states.push({
+        ...stateData,
+        durationMs: now - new Date(stateData.firstSeen).getTime(),
+        durationFormatted: formatDuration(now - new Date(stateData.firstSeen).getTime())
+      });
+    }
+    return states;
+  };
+
+  // Recent insights are in-memory, always available
+  const getRecentInsights = () => factoryState.trendInsights.slice(-5);
+
+  // Gather all data in parallel using allSettled for resilience
+  const results = await Promise.allSettled([
+    // 0: Hierarchy (requires InfluxDB)
+    (async () => {
+      await refreshHierarchyCache();
+      return schemaCache.hierarchy;
+    })(),
+    // 1: Measurements (requires InfluxDB)
+    (async () => {
+      await refreshSchemaCache();
+      return Array.from(schemaCache.measurements.values());
+    })(),
+    // 2: OEE data (requires InfluxDB)
+    (async () => {
+      await discoverOEESchema();
+      const enterprises = Object.keys(oeeConfig.enterprises);
+      const results = await Promise.all(
+        enterprises.map(ent => calculateOEEv2(ent, null))
+      );
+      return results;
+    })(),
+    // 3: Trends (requires InfluxDB)
+    queryTrends()
+  ]);
+
+  // Extract results with fallbacks
+  const hierarchyResult = extractResult(results[0], null);
+  const measurementsResult = extractResult(results[1], []);
+  const oeeResult = extractResult(results[2], []);
+  const trendsResult = extractResult(results[3], []);
+
+  // Equipment states and insights are always available (in-memory)
+  const equipmentStates = getEquipmentStates();
+  const recentInsights = getRecentInsights();
+
+  // Build response with status indicators for each section
+  const response = {
+    timestamp: new Date().toISOString(),
+    factory: {
+      hierarchy: hierarchyResult.data,
+      measurements: measurementsResult.data ? {
+        list: measurementsResult.data,
+        count: measurementsResult.data.length
+      } : null,
+      status: hierarchyResult.status === 'available' && measurementsResult.status === 'available'
+        ? 'available' : 'unavailable'
+    },
+    equipment: {
+      states: equipmentStates,
+      summary: {
+        running: equipmentStates.filter(s => s.stateName === 'RUNNING').length,
+        idle: equipmentStates.filter(s => s.stateName === 'IDLE').length,
+        down: equipmentStates.filter(s => s.stateName === 'DOWN').length,
+        total: equipmentStates.length
+      },
+      status: 'available' // Always available (in-memory)
+    },
+    performance: {
+      oee: oeeResult.data,
+      status: oeeResult.status
+    },
+    trends: {
+      recent: trendsResult.data ? trendsResult.data.slice(0, 50) : null,
+      status: trendsResult.status
+    },
+    insights: {
+      recent: recentInsights,
+      status: 'available' // Always available (in-memory)
+    },
+    meta: {
+      enterprises: ENTERPRISE_DOMAIN_CONTEXT,
+      measurementClassifications: MEASUREMENT_CLASSIFICATIONS
+    },
+    dataSourceStatus
+  };
+
+  // Always return 200 with whatever data is available
+  res.json(response);
 });
 
 // NEW: Schema classifications endpoint - returns measurements grouped by classification

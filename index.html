@@ -681,6 +681,313 @@
             line-height: 1.4;
         }
 
+        /* Equipment State Monitor */
+        .equipment-state-panel {
+            grid-column: span 6;
+            height: 450px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .state-summary {
+            display: flex;
+            gap: 20px;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+        }
+
+        .state-count {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 1rem;
+        }
+
+        .state-count span {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 2rem;
+            font-weight: 900;
+        }
+
+        .state-count.running span {
+            color: var(--accent-green);
+        }
+
+        .state-count.idle span {
+            color: var(--accent-amber);
+        }
+
+        .state-count.down span {
+            color: var(--accent-red);
+        }
+
+        .state-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+            gap: 10px;
+            flex: 1;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .state-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .state-grid::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .state-grid::-webkit-scrollbar-thumb {
+            background: var(--accent-cyan);
+            border-radius: 4px;
+        }
+
+        .equipment-card {
+            padding: 12px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .equipment-card.running {
+            border-color: var(--accent-green);
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .equipment-card.idle {
+            border-color: var(--accent-amber);
+            background: rgba(255, 191, 0, 0.05);
+        }
+
+        .equipment-card.down {
+            border-color: var(--accent-red);
+            background: rgba(255, 51, 102, 0.05);
+            animation: equipmentPulse 2s ease-in-out infinite;
+        }
+
+        @keyframes equipmentPulse {
+            0%, 100% { opacity: 1; box-shadow: 0 0 10px rgba(255, 51, 102, 0.5); }
+            50% { opacity: 0.85; box-shadow: 0 0 20px rgba(255, 51, 102, 0.8); }
+        }
+
+        .equipment-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 255, 0.3);
+        }
+
+        .equipment-name {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 5px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .equipment-state {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .equipment-card.running .equipment-state {
+            color: var(--accent-green);
+        }
+
+        .equipment-card.idle .equipment-state {
+            color: var(--accent-amber);
+        }
+
+        .equipment-card.down .equipment-state {
+            color: var(--accent-red);
+        }
+
+        /* Production Line OEE Panel */
+        .line-oee-panel {
+            grid-column: span 6;
+            height: 450px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .line-selector {
+            margin-bottom: 15px;
+        }
+
+        .line-selector select {
+            width: 100%;
+            padding: 12px;
+            background: rgba(0, 255, 255, 0.1);
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .line-selector select:hover {
+            background: rgba(0, 255, 255, 0.2);
+            border-color: var(--accent-cyan);
+        }
+
+        .line-selector select:focus {
+            outline: none;
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+        }
+
+        .line-oee-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 10px;
+            flex: 1;
+            max-height: 350px;
+            overflow-y: auto;
+        }
+
+        .line-oee-grid::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .line-oee-grid::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .line-oee-grid::-webkit-scrollbar-thumb {
+            background: var(--accent-cyan);
+            border-radius: 4px;
+        }
+
+        .line-card {
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            min-height: 100px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .line-card.healthy {
+            border-color: var(--accent-green);
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .line-card.warning {
+            border-color: var(--accent-amber);
+            background: rgba(255, 191, 0, 0.05);
+        }
+
+        .line-card.critical {
+            border-color: var(--accent-red);
+            background: rgba(255, 51, 102, 0.05);
+        }
+
+        .line-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 255, 0.3);
+        }
+
+        .line-name {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            white-space: nowrap;
+        }
+
+        .line-oee-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 1.8rem;
+            font-weight: 900;
+            margin-bottom: 5px;
+        }
+
+        .line-card.healthy .line-oee-value {
+            color: var(--accent-green);
+        }
+
+        .line-card.warning .line-oee-value {
+            color: var(--accent-amber);
+        }
+
+        .line-card.critical .line-oee-value {
+            color: var(--accent-red);
+        }
+
+        .line-oee-bar {
+            height: 6px;
+            background: rgba(0, 0, 0, 0.5);
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 5px;
+        }
+
+        .line-oee-bar-fill {
+            height: 100%;
+            transition: width 0.5s ease, background-color 0.3s ease;
+            border-radius: 3px;
+        }
+
+        .line-card.healthy .line-oee-bar-fill {
+            background: var(--accent-green);
+        }
+
+        .line-card.warning .line-oee-bar-fill {
+            background: var(--accent-amber);
+        }
+
+        .line-card.critical .line-oee-bar-fill {
+            background: var(--accent-red);
+        }
+
+        .line-breakdown {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-dim);
+        }
+
+        .line-breakdown-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .line-breakdown-label {
+            text-transform: uppercase;
+        }
+
+        .line-breakdown-value {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+
         /* Charts placeholder */
         .chart-panel {
             grid-column: span 6;
@@ -969,7 +1276,7 @@
 
         /* Responsive */
         @media (max-width: 1200px) {
-            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel {
+            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard {
                 grid-column: span 6;
             }
         }
@@ -980,12 +1287,25 @@
                 letter-spacing: 4px;
             }
 
-            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel {
+            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard {
                 grid-column: span 12;
             }
 
             .factory-btn {
                 min-width: 100%;
+            }
+
+            .state-summary {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .state-grid {
+                grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            }
+
+            .line-oee-grid {
+                grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             }
         }
     </style>
@@ -1146,6 +1466,35 @@
                 </div>
             </div>
 
+            <!-- Equipment State Monitor -->
+            <div class="card equipment-state-panel">
+                <div class="card-title">Equipment State Monitor</div>
+                <div class="state-summary">
+                    <div class="state-count running"><span id="state-running">0</span> Running</div>
+                    <div class="state-count idle"><span id="state-idle">0</span> Idle</div>
+                    <div class="state-count down"><span id="state-down">0</span> Down</div>
+                </div>
+                <div class="state-grid" id="equipment-state-grid">
+                    <div class="heatmap-loading">Loading equipment states...</div>
+                </div>
+            </div>
+
+            <!-- Production Line OEE -->
+            <div class="card line-oee-panel">
+                <div class="card-title">Production Line OEE</div>
+                <div class="line-selector">
+                    <select id="line-enterprise-select" onchange="handleLineEnterpriseChange()">
+                        <option value="ALL">All Enterprises</option>
+                        <option value="Enterprise A">Enterprise A</option>
+                        <option value="Enterprise B">Enterprise B</option>
+                        <option value="Enterprise C">Enterprise C</option>
+                    </select>
+                </div>
+                <div class="line-oee-grid" id="line-oee-grid">
+                    <div class="heatmap-loading">Loading line OEE...</div>
+                </div>
+            </div>
+
             <!-- Chart Panels -->
             <div class="card chart-panel">
                 <div class="card-title">OEE by Enterprise</div>
@@ -1242,7 +1591,9 @@
             enterpriseCounts: { 'Enterprise A': 0, 'Enterprise B': 0, 'Enterprise C': 0 },
             selectedFactory: 'ALL',  // 'ALL', 'A', 'B', or 'C'
             insightFilter: 'all',  // 'all' or 'anomalies'
-            eventFilter: 'all'  // 'all', 'oee', 'state', 'alarm'
+            eventFilter: 'all',  // 'all', 'oee', 'state', 'alarm'
+            equipmentStates: new Map(),  // Map of equipment ID to state
+            selectedLineEnterprise: 'ALL'  // Selected enterprise for line OEE widget
         };
 
         // Initialize Charts
@@ -1547,6 +1898,175 @@
                     // Response to direct question
                     displayClaudeResponse(message.data);
                     break;
+
+                case 'equipment_state':
+                    // Real-time equipment state update
+                    updateEquipmentState(message.data);
+                    break;
+            }
+        }
+
+        // Fetch equipment states from API
+        async function fetchEquipmentStates() {
+            try {
+                const response = await fetch('/api/equipment/states');
+                const data = await response.json();
+
+                if (data.states && Array.isArray(data.states)) {
+                    // Populate equipment states map
+                    state.equipmentStates.clear();
+                    data.states.forEach(equipment => {
+                        state.equipmentStates.set(equipment.id, equipment);
+                    });
+
+                    // Update the equipment state grid
+                    updateEquipmentStateGrid();
+                }
+            } catch (error) {
+                console.error('Failed to fetch equipment states:', error);
+                const grid = document.getElementById('equipment-state-grid');
+                if (grid) {
+                    grid.innerHTML = '<div class="heatmap-loading">Failed to load equipment states</div>';
+                }
+            }
+        }
+
+        // Update equipment state from WebSocket message
+        function updateEquipmentState(data) {
+            if (data.id && data.state) {
+                state.equipmentStates.set(data.id, data);
+                updateEquipmentStateGrid();
+            }
+        }
+
+        // Render equipment state grid
+        function updateEquipmentStateGrid() {
+            const grid = document.getElementById('equipment-state-grid');
+            if (!grid) return;
+
+            const states = Array.from(state.equipmentStates.values());
+
+            if (states.length === 0) {
+                grid.innerHTML = '<div class="heatmap-loading">No equipment data available</div>';
+                return;
+            }
+
+            // Sort: DOWN first, then IDLE, then RUNNING (most critical on top)
+            const sortOrder = { 'DOWN': 0, 'IDLE': 1, 'RUNNING': 2 };
+            states.sort((a, b) => {
+                const orderA = sortOrder[a.state.toUpperCase()] ?? 3;
+                const orderB = sortOrder[b.state.toUpperCase()] ?? 3;
+                return orderA - orderB;
+            });
+
+            // Count states
+            let runningCount = 0;
+            let idleCount = 0;
+            let downCount = 0;
+
+            states.forEach(equipment => {
+                const state = equipment.state.toUpperCase();
+                if (state === 'RUNNING') runningCount++;
+                else if (state === 'IDLE') idleCount++;
+                else if (state === 'DOWN') downCount++;
+            });
+
+            // Update summary counts
+            document.getElementById('state-running').textContent = runningCount;
+            document.getElementById('state-idle').textContent = idleCount;
+            document.getElementById('state-down').textContent = downCount;
+
+            // Render equipment cards
+            grid.innerHTML = states.map(equipment => {
+                const stateClass = equipment.state.toLowerCase();
+                return `
+                    <div class="equipment-card ${stateClass}">
+                        <div class="equipment-name" title="${equipment.name}">${equipment.name}</div>
+                        <div class="equipment-state">${equipment.state}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Fetch line OEE from API
+        async function fetchLineOEE(enterprise = 'ALL') {
+            try {
+                const response = await fetch(`/api/oee/lines?enterprise=${encodeURIComponent(enterprise)}`);
+                const data = await response.json();
+
+                if (data.lines && Array.isArray(data.lines)) {
+                    renderLineOEEGrid(data.lines);
+                } else {
+                    const grid = document.getElementById('line-oee-grid');
+                    if (grid) {
+                        grid.innerHTML = '<div class="heatmap-loading">No line OEE data available</div>';
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch line OEE:', error);
+                const grid = document.getElementById('line-oee-grid');
+                if (grid) {
+                    grid.innerHTML = '<div class="heatmap-loading">Failed to load line OEE</div>';
+                }
+            }
+        }
+
+        // Render line OEE grid
+        function renderLineOEEGrid(lines) {
+            const grid = document.getElementById('line-oee-grid');
+            if (!grid) return;
+
+            if (lines.length === 0) {
+                grid.innerHTML = '<div class="heatmap-loading">No lines available for selected enterprise</div>';
+                return;
+            }
+
+            grid.innerHTML = lines.map(line => {
+                const oee = line.oee || 0;
+                let statusClass = 'critical';
+                if (oee >= 85) statusClass = 'healthy';
+                else if (oee >= 70) statusClass = 'warning';
+
+                // Format breakdown if available
+                let breakdownHtml = '';
+                if (line.availability !== undefined && line.performance !== undefined && line.quality !== undefined) {
+                    breakdownHtml = `
+                        <div class="line-breakdown">
+                            <div class="line-breakdown-item">
+                                <span class="line-breakdown-label">A</span>
+                                <span class="line-breakdown-value">${line.availability}%</span>
+                            </div>
+                            <div class="line-breakdown-item">
+                                <span class="line-breakdown-label">P</span>
+                                <span class="line-breakdown-value">${line.performance}%</span>
+                            </div>
+                            <div class="line-breakdown-item">
+                                <span class="line-breakdown-label">Q</span>
+                                <span class="line-breakdown-value">${line.quality}%</span>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="line-card ${statusClass}">
+                        <div class="line-name" title="${line.name}">${line.name}</div>
+                        <div class="line-oee-value">${oee.toFixed(1)}%</div>
+                        <div class="line-oee-bar">
+                            <div class="line-oee-bar-fill" style="width: ${oee}%"></div>
+                        </div>
+                        ${breakdownHtml}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Handle line enterprise selector change
+        function handleLineEnterpriseChange() {
+            const selector = document.getElementById('line-enterprise-select');
+            if (selector) {
+                state.selectedLineEnterprise = selector.value;
+                fetchLineOEE(state.selectedLineEnterprise);
             }
         }
 
@@ -2048,6 +2568,10 @@
             fetchOEEBreakdown();
             fetchFactoryStatus();
 
+            // Fetch equipment states and line OEE
+            fetchEquipmentStates();
+            fetchLineOEE(state.selectedLineEnterprise);
+
             // Update message rate every second
             setInterval(updateMessageRate, 1000);
 
@@ -2055,6 +2579,10 @@
             setInterval(fetchOEE, 30000);
             setInterval(fetchOEEBreakdown, 30000);
             setInterval(fetchFactoryStatus, 30000);
+
+            // Refresh equipment states and line OEE every 30 seconds
+            setInterval(fetchEquipmentStates, 30000);
+            setInterval(() => fetchLineOEE(state.selectedLineEnterprise), 30000);
         });
 
         // Expose askClaudeQuestion globally
