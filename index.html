@@ -1503,6 +1503,11 @@
                 <canvas id="oee-breakdown-chart"></canvas>
             </div>
 
+            <div class="card chart-panel waste-chart">
+                <div class="card-title">Waste & Defect Trends (24h)</div>
+                <canvas id="waste-trend-chart"></canvas>
+            </div>
+
             <div class="card chart-panel">
                 <div class="card-title">Production Heatmap</div>
                 <div class="heatmap-container" id="production-heatmap">
@@ -1600,6 +1605,7 @@
 
         // Initialize Charts
         window.oeeBreakdownChart = null;
+        window.wasteTrendChart = null;
 
         function initializeCharts() {
             // OEE Breakdown Chart (Horizontal Bar Chart)
@@ -1652,6 +1658,67 @@
                     }
                 }
             });
+
+            // Waste Trend Chart (Line Chart)
+            const wasteTrendCtx = document.getElementById('waste-trend-chart').getContext('2d');
+            window.wasteTrendChart = new Chart(wasteTrendCtx, {
+                type: 'line',
+                data: {
+                    labels: [], // Time labels
+                    datasets: [
+                        {
+                            label: 'Enterprise A',
+                            data: [],
+                            borderColor: 'rgba(0, 255, 255, 0.8)',
+                            backgroundColor: 'rgba(0, 255, 255, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Enterprise B',
+                            data: [],
+                            borderColor: 'rgba(255, 0, 255, 0.8)',
+                            backgroundColor: 'rgba(255, 0, 255, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Enterprise C',
+                            data: [],
+                            borderColor: 'rgba(255, 191, 0, 0.8)',
+                            backgroundColor: 'rgba(255, 191, 0, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { color: '#e8e8e8' }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { color: '#6b7280' },
+                            grid: { color: 'rgba(0, 255, 255, 0.1)' }
+                        },
+                        y: {
+                            ticks: { color: '#6b7280' },
+                            grid: { color: 'rgba(0, 255, 255, 0.1)' },
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Defects',
+                                color: '#e8e8e8'
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         // Update charts with new data (removed - no longer needed)
@@ -1678,6 +1745,41 @@
                 }
             } catch (error) {
                 console.error('Failed to fetch OEE breakdown:', error);
+            }
+        }
+
+        // Fetch waste trends and update chart
+        async function fetchWasteTrends() {
+            try {
+                const response = await fetch('/api/waste/trends');
+                const data = await response.json();
+
+                if (window.wasteTrendChart && data.trends) {
+                    // Group trends by enterprise
+                    const enterpriseData = {
+                        'Enterprise A': [],
+                        'Enterprise B': [],
+                        'Enterprise C': []
+                    };
+                    const timeLabels = new Set();
+
+                    data.trends.forEach(t => {
+                        const hour = new Date(t.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        timeLabels.add(hour);
+                        if (enterpriseData[t.enterprise]) {
+                            enterpriseData[t.enterprise].push({ time: hour, value: t.value });
+                        }
+                    });
+
+                    // Update chart
+                    window.wasteTrendChart.data.labels = Array.from(timeLabels).slice(-24);
+                    window.wasteTrendChart.data.datasets[0].data = enterpriseData['Enterprise A'].map(d => d.value);
+                    window.wasteTrendChart.data.datasets[1].data = enterpriseData['Enterprise B'].map(d => d.value);
+                    window.wasteTrendChart.data.datasets[2].data = enterpriseData['Enterprise C'].map(d => d.value);
+                    window.wasteTrendChart.update('none');
+                }
+            } catch (error) {
+                console.error('Failed to fetch waste trends:', error);
             }
         }
 
@@ -2598,6 +2700,7 @@
             fetchOEE();
             fetchOEEBreakdown();
             fetchFactoryStatus();
+            fetchWasteTrends();
 
             // Fetch equipment states and line OEE
             fetchEquipmentStates();
@@ -2610,6 +2713,7 @@
             setInterval(fetchOEE, 30000);
             setInterval(fetchOEEBreakdown, 30000);
             setInterval(fetchFactoryStatus, 30000);
+            setInterval(fetchWasteTrends, 30000);
 
             // Refresh equipment states and line OEE every 30 seconds
             setInterval(fetchEquipmentStates, 30000);

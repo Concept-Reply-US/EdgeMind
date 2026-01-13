@@ -221,7 +221,9 @@ const ENTERPRISE_DOMAIN_CONTEXT = {
     safeRanges: {
       'furnace_temp': { min: 2600, max: 2800, unit: '°F', critical: true },
       'crown_temp': { min: 2400, max: 2600, unit: '°F' }
-    }
+    },
+    wasteMetrics: ['OEE_Waste', 'Production_DefectCHK', 'Production_DefectDIM', 'Production_DefectSED', 'Production_RejectCount'],
+    wasteThresholds: { warning: 10, critical: 25, unit: 'defects/hr' }
   },
   'Enterprise B': {
     industry: 'Beverage Bottling',
@@ -237,7 +239,9 @@ const ENTERPRISE_DOMAIN_CONTEXT = {
     safeRanges: {
       'reject_rate': { max: 2, unit: '%', warning: 1.5 },
       'filler_speed': { min: 350, max: 650, unit: 'BPM' }
-    }
+    },
+    wasteMetrics: ['count_defect', 'input_countdefect', 'workorder_quantitydefect'],
+    wasteThresholds: { warning: 50, critical: 100, unit: 'defects/hr' }
   },
   'Enterprise C': {
     industry: 'Bioprocessing / Pharma',
@@ -254,7 +258,9 @@ const ENTERPRISE_DOMAIN_CONTEXT = {
     safeRanges: {
       'pH': { min: 6.8, max: 7.4, critical: true },
       'dissolved_oxygen': { min: 30, max: 70, unit: '%' }
-    }
+    },
+    wasteMetrics: ['chrom_CHR01_WASTE_PV'],
+    wasteThresholds: { warning: 5, critical: 15, unit: 'L' }
   }
 };
 
@@ -1770,6 +1776,101 @@ app.get('/api/oee/lines', async (req, res) => {
     console.error('OEE lines endpoint error:', error);
     res.status(500).json({
       error: 'Failed to query OEE lines',
+      message: error.message
+    });
+  }
+});
+
+// NEW: Waste/Defect tracking endpoint
+app.get('/api/waste/trends', async (req, res) => {
+  try {
+    const fluxQuery = `
+      from(bucket: "factory")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) =>
+          r._measurement == "OEE_Waste" or
+          r._measurement == "Production_DefectCHK" or
+          r._measurement == "Production_DefectDIM" or
+          r._measurement == "Production_DefectSED" or
+          r._measurement == "Production_RejectCount" or
+          r._measurement == "count_defect" or
+          r._measurement == "input_countdefect" or
+          r._measurement == "workorder_quantitydefect" or
+          r._measurement == "chrom_CHR01_WASTE_PV"
+        )
+        |> filter(fn: (r) => r._value >= 0)
+        |> group(columns: ["enterprise", "_measurement"])
+        |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
+    `;
+
+    const trends = [];
+    const byEnterprise = {};
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (o._value !== undefined && o.enterprise && o._measurement) {
+            const dataPoint = {
+              time: o._time,
+              enterprise: o.enterprise,
+              value: parseFloat(o._value.toFixed(2)),
+              measurement: o._measurement
+            };
+            trends.push(dataPoint);
+
+            // Aggregate by enterprise for summary
+            if (!byEnterprise[o.enterprise]) {
+              byEnterprise[o.enterprise] = [];
+            }
+            byEnterprise[o.enterprise].push(o._value);
+          }
+        },
+        error(error) {
+          console.error('Waste trends query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    // Calculate summary statistics and trends
+    const summary = {};
+    for (const [enterprise, values] of Object.entries(byEnterprise)) {
+      const total = values.reduce((sum, v) => sum + v, 0);
+      const avg = values.length > 0 ? total / values.length : 0;
+
+      // Simple trend detection: compare first half vs second half
+      const midpoint = Math.floor(values.length / 2);
+      const firstHalf = values.slice(0, midpoint);
+      const secondHalf = values.slice(midpoint);
+      const firstAvg = firstHalf.length > 0 ? firstHalf.reduce((s, v) => s + v, 0) / firstHalf.length : 0;
+      const secondAvg = secondHalf.length > 0 ? secondHalf.reduce((s, v) => s + v, 0) / secondHalf.length : 0;
+
+      let trend = 'stable';
+      if (secondAvg > firstAvg * 1.1) trend = 'rising';
+      else if (secondAvg < firstAvg * 0.9) trend = 'falling';
+
+      summary[enterprise] = {
+        total: parseFloat(total.toFixed(2)),
+        avg: parseFloat(avg.toFixed(2)),
+        trend,
+        dataPoints: values.length
+      };
+    }
+
+    res.json({
+      trends,
+      summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Waste trends endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to query waste trends',
       message: error.message
     });
   }
