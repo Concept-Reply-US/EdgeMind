@@ -52,7 +52,14 @@ const state = {
     equipmentStates: new Map(),  // Map of equipment ID to state
     selectedLineEnterprise: 'ALL',  // Selected enterprise for line OEE widget
     streamPaused: false,  // Pause/resume live stream
-    anomalyFilters: []  // User-defined anomaly filter rules
+    anomalyFilters: [],  // User-defined anomaly filter rules
+    thresholdSettings: {
+        oeeBaseline: 70,
+        oeeWorldClass: 85,
+        availabilityMin: 65,
+        defectRateWarning: 2,
+        defectRateCritical: 5
+    }
 };
 
 // Initialize Charts
@@ -575,6 +582,11 @@ function handleServerMessage(message) {
                 renderActiveFilters();
             }
 
+            // Load threshold settings from server
+            if (message.data.thresholdSettings) {
+                state.thresholdSettings = message.data.thresholdSettings;
+            }
+
             updateUI();
 
             // Show sleeping agent message if insights are disabled
@@ -674,6 +686,14 @@ function handleServerMessage(message) {
             if (message.data && Array.isArray(message.data.filters)) {
                 state.anomalyFilters = message.data.filters;
                 renderActiveFilters();
+            }
+            break;
+
+        case 'settings_updated':
+            // Threshold settings updated from another client or server
+            if (message.data) {
+                state.thresholdSettings = message.data;
+                console.log('[SETTINGS] Synced from server:', message.data);
             }
             break;
     }
@@ -979,14 +999,31 @@ function addMQTTMessageToStream(message) {
 
 // Add Claude insight to the AI agent panel
 function addClaudeInsight(insight) {
-    // Extract anomalies from insight
+    // Extract anomalies from insight - supports both old (string) and new (object) formats
     if (insight.anomalies && Array.isArray(insight.anomalies)) {
-        insight.anomalies.forEach(anomalyText => {
-            state.anomalies.push({
-                text: anomalyText,
-                timestamp: insight.timestamp,
-                severity: insight.severity
-            });
+        insight.anomalies.forEach(anomalyData => {
+            // Handle both string format (old) and object format (new)
+            if (typeof anomalyData === 'string') {
+                // Old format: anomaly is just a string
+                state.anomalies.push({
+                    text: anomalyData,
+                    timestamp: insight.timestamp,
+                    severity: insight.severity
+                });
+            } else if (typeof anomalyData === 'object') {
+                // New format: anomaly is an object with description, reasoning, etc.
+                state.anomalies.push({
+                    text: anomalyData.description || 'Anomaly detected',
+                    description: anomalyData.description,
+                    reasoning: anomalyData.reasoning,
+                    metric: anomalyData.metric,
+                    enterprise: anomalyData.enterprise,
+                    actual_value: anomalyData.actual_value,
+                    threshold: anomalyData.threshold,
+                    timestamp: insight.timestamp,
+                    severity: anomalyData.severity || insight.severity
+                });
+            }
         });
         // Keep only last 50 anomalies
         while (state.anomalies.length > 50) {
@@ -1312,11 +1349,43 @@ function openAnomalyModal(anomaly) {
     const textEl = document.getElementById('anomaly-modal-text');
     const severityEl = document.getElementById('anomaly-modal-severity');
     const timestampEl = document.getElementById('anomaly-modal-timestamp');
+    const reasoningEl = document.getElementById('anomaly-modal-reasoning');
 
     if (!overlay || !textEl || !severityEl || !timestampEl) return;
 
     // Populate modal with static snapshot of anomaly data
-    textEl.textContent = anomaly.text;
+    textEl.textContent = anomaly.text || anomaly.description || 'No description available';
+
+    // Display reasoning if available
+    if (reasoningEl) {
+        if (anomaly.reasoning) {
+            // Build detailed reasoning display
+            let reasoningHtml = `<div class="reasoning-text">${anomaly.reasoning}</div>`;
+
+            // Add metric details if available
+            if (anomaly.metric || anomaly.actual_value || anomaly.threshold) {
+                reasoningHtml += '<div class="reasoning-details">';
+                if (anomaly.enterprise) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Enterprise:</span> ${anomaly.enterprise}</div>`;
+                }
+                if (anomaly.metric) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Metric:</span> ${anomaly.metric}</div>`;
+                }
+                if (anomaly.actual_value) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Actual Value:</span> ${anomaly.actual_value}</div>`;
+                }
+                if (anomaly.threshold) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Threshold:</span> ${anomaly.threshold}</div>`;
+                }
+                reasoningHtml += '</div>';
+            }
+            reasoningEl.innerHTML = reasoningHtml;
+            reasoningEl.style.display = 'block';
+        } else {
+            reasoningEl.innerHTML = '<div class="reasoning-text reasoning-unavailable">Reasoning not available for this anomaly</div>';
+            reasoningEl.style.display = 'block';
+        }
+    }
 
     // Format severity badge
     const severity = anomaly.severity || 'medium';
@@ -1346,6 +1415,66 @@ function closeAnomalyModal() {
     }
 }
 
+// Settings Modal Functions
+function openSettingsModal() {
+    const overlay = document.getElementById('settings-modal-overlay');
+    if (!overlay) return;
+
+    // Populate inputs with current values
+    document.getElementById('setting-oeeBaseline').value = state.thresholdSettings.oeeBaseline;
+    document.getElementById('setting-oeeWorldClass').value = state.thresholdSettings.oeeWorldClass;
+    document.getElementById('setting-availabilityMin').value = state.thresholdSettings.availabilityMin;
+    document.getElementById('setting-defectRateWarning').value = state.thresholdSettings.defectRateWarning;
+    document.getElementById('setting-defectRateCritical').value = state.thresholdSettings.defectRateCritical;
+
+    overlay.classList.add('active');
+}
+
+function closeSettingsModal() {
+    const overlay = document.getElementById('settings-modal-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
+}
+
+async function saveSettings() {
+    const settings = {
+        oeeBaseline: parseFloat(document.getElementById('setting-oeeBaseline').value),
+        oeeWorldClass: parseFloat(document.getElementById('setting-oeeWorldClass').value),
+        availabilityMin: parseFloat(document.getElementById('setting-availabilityMin').value),
+        defectRateWarning: parseFloat(document.getElementById('setting-defectRateWarning').value),
+        defectRateCritical: parseFloat(document.getElementById('setting-defectRateCritical').value)
+    };
+
+    // Validate
+    for (const [key, value] of Object.entries(settings)) {
+        if (isNaN(value) || value < 0 || value > 100) {
+            alert(`Invalid ${key}: must be a number between 0-100`);
+            return;
+        }
+    }
+
+    try {
+        const response = await fetch('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(settings)
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to save settings');
+        }
+
+        const updatedSettings = await response.json();
+        state.thresholdSettings = updatedSettings;
+        closeSettingsModal();
+        console.log('[SETTINGS] Saved:', updatedSettings);
+    } catch (error) {
+        console.error('Error saving settings:', error);
+        alert('Failed to save settings. Please try again.');
+    }
+}
+
 // Setup modal event listeners when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
     // Close button click
@@ -1364,12 +1493,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Escape key to close
+    // Escape key to close modals
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             closeAnomalyModal();
+            closeSettingsModal();
         }
     });
+
+    // Settings modal - click outside to close
+    const settingsOverlay = document.getElementById('settings-modal-overlay');
+    if (settingsOverlay) {
+        settingsOverlay.addEventListener('click', function(e) {
+            if (e.target === settingsOverlay) {
+                closeSettingsModal();
+            }
+        });
+    }
 });
 function filterInsights(filterType, clickedTab) {
     state.insightFilter = filterType;

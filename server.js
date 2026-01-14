@@ -382,6 +382,42 @@ app.get('/api/trends', async (req, res) => {
   res.json(trends);
 });
 
+// API endpoint to get threshold settings
+app.get('/api/settings', (req, res) => {
+  res.json(factoryState.thresholdSettings);
+});
+
+// API endpoint to update threshold settings
+app.post('/api/settings', express.json(), (req, res) => {
+  try {
+    const { oeeBaseline, oeeWorldClass, availabilityMin, defectRateWarning, defectRateCritical } = req.body;
+
+    // Validate all values are numbers between 0-100
+    const values = { oeeBaseline, oeeWorldClass, availabilityMin, defectRateWarning, defectRateCritical };
+    for (const [key, value] of Object.entries(values)) {
+      if (value !== undefined) {
+        const num = Number(value);
+        if (isNaN(num) || num < 0 || num > 100) {
+          return res.status(400).json({ error: `Invalid ${key}: must be 0-100` });
+        }
+        factoryState.thresholdSettings[key] = num;
+      }
+    }
+
+    // Broadcast updated settings to all WebSocket clients
+    broadcastToClients({
+      type: 'settings_updated',
+      data: factoryState.thresholdSettings
+    });
+
+    console.log('[SETTINGS] Updated thresholds:', factoryState.thresholdSettings);
+    res.json(factoryState.thresholdSettings);
+  } catch (error) {
+    console.error('Settings update error:', error);
+    res.status(500).json({ error: 'Failed to update settings' });
+  }
+});
+
 // API endpoint for 24h OEE aggregate
 app.get('/api/oee', async (req, res) => {
   try {
@@ -1236,7 +1272,8 @@ wss.on('connection', (ws) => {
       recentAnomalies: factoryState.anomalies.slice(-10),
       stats: factoryState.stats,
       insightsEnabled: !CONFIG.disableInsights,
-      anomalyFilters: factoryState.anomalyFilters
+      anomalyFilters: factoryState.anomalyFilters,
+      thresholdSettings: factoryState.thresholdSettings
     }
   }));
 

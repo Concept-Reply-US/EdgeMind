@@ -18,6 +18,7 @@
             <h1>EDGE MIND</h1>
             <div class="subtitle">Command Center - LIVE DATA</div>
             <div class="status-badge" id="system-status">● CONNECTING...</div>
+            <button class="settings-btn" onclick="openSettingsModal()">⚙ Settings</button>
         </header>
 
         <div class="dashboard-grid">
@@ -281,6 +282,7 @@
             </div>
             <div class="anomaly-modal-content">
                 <div class="anomaly-modal-text" id="anomaly-modal-text"></div>
+                <div class="anomaly-modal-reasoning" id="anomaly-modal-reasoning"></div>
                 <div class="anomaly-modal-meta">
                     <div class="anomaly-modal-meta-item">
                         <div class="anomaly-modal-meta-label">Severity</div>
@@ -290,6 +292,42 @@
                         <div class="anomaly-modal-meta-label">Detected At</div>
                         <div class="anomaly-modal-meta-value" id="anomaly-modal-timestamp"></div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div class="settings-modal-overlay" id="settings-modal-overlay">
+        <div class="settings-modal">
+            <div class="settings-modal-header">
+                <div class="settings-modal-title">Alert Threshold Settings</div>
+                <button class="settings-modal-close" onclick="closeSettingsModal()">×</button>
+            </div>
+            <div class="settings-modal-content">
+                <div class="settings-group">
+                    <label class="settings-label">OEE Baseline (%) - Below this is concerning</label>
+                    <input type="number" id="setting-oeeBaseline" class="settings-input" min="0" max="100" step="1">
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">OEE World Class (%) - Above this is excellent</label>
+                    <input type="number" id="setting-oeeWorldClass" class="settings-input" min="0" max="100" step="1">
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Availability Minimum (%) - Below this is critical</label>
+                    <input type="number" id="setting-availabilityMin" class="settings-input" min="0" max="100" step="1">
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Defect Rate Warning (%) - Above this triggers warning</label>
+                    <input type="number" id="setting-defectRateWarning" class="settings-input" min="0" max="100" step="0.1">
+                </div>
+                <div class="settings-group">
+                    <label class="settings-label">Defect Rate Critical (%) - Above this triggers critical</label>
+                    <input type="number" id="setting-defectRateCritical" class="settings-input" min="0" max="100" step="0.1">
+                </div>
+                <div class="settings-actions">
+                    <button class="settings-save-btn" onclick="saveSettings()">Save Settings</button>
+                    <button class="settings-cancel-btn" onclick="closeSettingsModal()">Cancel</button>
                 </div>
             </div>
         </div>
