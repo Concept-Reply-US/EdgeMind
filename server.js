@@ -2179,6 +2179,10 @@ app.get('/api/waste/by-line', async (req, res) => {
     console.error('Waste by line endpoint error:', error);
     res.status(500).json({
       error: 'Failed to query waste by line',
+      message: error.message
+    });
+  }
+});
 
 // =============================================================================
 // CMMS INTEGRATION ENDPOINTS
