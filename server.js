@@ -1627,9 +1627,13 @@ function broadcastToClients(message) {
 app.get('/health', async (req, res) => {
   let influxOk = false;
   try {
-    await influxDB.ping();
+    // Execute a minimal query to verify connectivity
+    const query = 'buckets() |> limit(n: 1)';
+    await queryApi.collectRows(query);
     influxOk = true;
-  } catch (e) {}
+  } catch (e) {
+    console.error('InfluxDB health check failed:', e.message);
+  }
 
   res.json({
     status: 'online',
