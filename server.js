@@ -4,6 +4,7 @@ const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-be
 const WebSocket = require('ws');
 const express = require('express');
 const { InfluxDB, Point } = require('@influxdata/influxdb-client');
+const { createCmmsProvider } = require('./lib/cmms-interface');
 
 // Configuration
 const CONFIG = {
@@ -23,12 +24,38 @@ const CONFIG = {
     org: process.env.INFLUXDB_ORG || 'proveit',
     bucket: process.env.INFLUXDB_BUCKET || 'factory'
   },
-  disableInsights: process.env.DISABLE_INSIGHTS === 'true'
+  disableInsights: process.env.DISABLE_INSIGHTS === 'true',
+  cmms: {
+    enabled: process.env.CMMS_ENABLED === 'true',
+    provider: process.env.CMMS_PROVIDER || 'maintainx',
+    maintainx: {
+      apiKey: process.env.MAINTAINX_API_KEY || '',
+      baseUrl: process.env.MAINTAINX_BASE_URL || 'https://api.getmaintainx.com/v1',
+      defaultLocationId: process.env.MAINTAINX_DEFAULT_LOCATION_ID || null,
+      defaultAssigneeId: process.env.MAINTAINX_DEFAULT_ASSIGNEE_ID || null
+    }
+  }
 };
 
 // Initialize services
 const app = express();
 const bedrockClient = new BedrockRuntimeClient({ region: CONFIG.bedrock.region });
+
+// Initialize CMMS provider
+let cmmsProvider = null;
+if (CONFIG.cmms.enabled) {
+  try {
+    cmmsProvider = createCmmsProvider(CONFIG.cmms.provider, {
+      enabled: true,
+      ...CONFIG.cmms[CONFIG.cmms.provider]
+    });
+    console.log(`✅ CMMS provider initialized: ${cmmsProvider.getProviderName()}`);
+  } catch (error) {
+    console.error(`❌ Failed to initialize CMMS provider: ${error.message}`);
+  }
+} else {
+  console.log('📋 CMMS integration disabled');
+}
 
 // Serve static files (frontend HTML)
 app.use(express.static(__dirname));
@@ -44,6 +71,7 @@ const factoryState = {
   anomalies: [],
   insights: [],
   trendInsights: [],
+  anomalyFilters: [], // User-defined filter rules for Claude analysis
   stats: {
     messageCount: 0,
     anomalyCount: 0,
@@ -120,7 +148,7 @@ const VALID_ENTERPRISES = ['ALL', 'Enterprise A', 'Enterprise B', 'Enterprise C'
  * Valid WebSocket message types.
  * SECURITY: Whitelist approach prevents processing of unknown message types.
  */
-const VALID_WS_MESSAGE_TYPES = ['get_stats', 'ask_claude'];
+const VALID_WS_MESSAGE_TYPES = ['get_stats', 'ask_claude', 'update_anomaly_filter'];
 
 /**
  * Maximum length for user-provided strings.
@@ -868,11 +896,133 @@ async function runTrendAnalysis() {
       });
 
       console.log('✨ Trend Analysis:', insight.summary);
+
+      // CMMS Integration: Create work orders for high-severity anomalies
+      if (cmmsProvider && cmmsProvider.isEnabled() && insight.severity === 'high' && insight.anomalies?.length > 0) {
+        processAnomaliesForWorkOrders(insight, trends);
+      }
     }
 
   } catch (error) {
     console.error('❌ Trend analysis error:', error.message);
   }
+}
+
+/**
+ * Processes high-severity anomalies and creates CMMS work orders.
+ * Deduplicates by equipment to avoid creating multiple work orders for the same machine.
+ *
+ * @param {Object} insight - Claude analysis insight
+ * @param {Array} trends - Trend data used for context
+ */
+async function processAnomaliesForWorkOrders(insight, trends) {
+  console.log(`🔧 Processing ${insight.anomalies.length} anomalies for work order creation...`);
+
+  try {
+    // Extract affected equipment from trends and equipment state cache
+    const affectedEquipment = extractAffectedEquipment(trends, insight);
+
+    if (affectedEquipment.length === 0) {
+      console.log('🔧 No specific equipment identified for work order creation');
+      return;
+    }
+
+    // Create work orders for each affected piece of equipment
+    const workOrderPromises = affectedEquipment.map(async (equipment) => {
+      try {
+        const workOrder = await cmmsProvider.createWorkOrder(insight, equipment);
+
+        // Broadcast work order creation to WebSocket clients
+        broadcastToClients({
+          type: 'cmms_work_order_created',
+          data: {
+            workOrder,
+            equipment,
+            anomaly: {
+              summary: insight.summary,
+              severity: insight.severity,
+              timestamp: insight.timestamp
+            }
+          }
+        });
+
+        return workOrder;
+      } catch (error) {
+        console.error(`🔧 Failed to create work order for ${equipment.enterprise}/${equipment.machine}:`, error.message);
+        return null;
+      }
+    });
+
+    const results = await Promise.allSettled(workOrderPromises);
+    const successful = results.filter(r => r.status === 'fulfilled' && r.value !== null).length;
+
+    console.log(`🔧 Created ${successful}/${affectedEquipment.length} work orders successfully`);
+
+  } catch (error) {
+    console.error('🔧 Error processing anomalies for work orders:', error.message);
+  }
+}
+
+/**
+ * Extracts affected equipment from trends and equipment state cache.
+ * Prioritizes equipment in DOWN or IDLE state for work order creation.
+ *
+ * @param {Array} trends - Trend data
+ * @param {Object} insight - Claude insight with enterprise-specific data
+ * @returns {Array<Object>} Array of equipment objects
+ */
+function extractAffectedEquipment(trends, insight) {
+  const equipment = new Map(); // Use Map to deduplicate by equipment key
+
+  // Extract unique equipment from trends
+  trends.forEach(trend => {
+    if (trend.enterprise && trend.site && trend.area) {
+      const key = `${trend.enterprise}/${trend.site}/${trend.area}`;
+
+      if (!equipment.has(key)) {
+        equipment.set(key, {
+          enterprise: trend.enterprise,
+          site: trend.site,
+          area: trend.area,
+          machine: trend.area, // Use area as machine identifier
+          stateName: 'UNKNOWN'
+        });
+      }
+    }
+  });
+
+  // Enrich with equipment state data if available
+  for (const [stateKey, stateData] of equipmentStateCache.states.entries()) {
+    const key = `${stateData.enterprise}/${stateData.site}/${stateData.machine}`;
+
+    if (equipment.has(key)) {
+      // Update existing equipment with state info
+      const eq = equipment.get(key);
+      eq.stateName = stateData.stateName;
+      eq.machine = stateData.machine;
+    } else if (insight.enterpriseInsights?.[stateData.enterprise]) {
+      // Add equipment from state cache if mentioned in enterprise insights
+      equipment.set(key, {
+        enterprise: stateData.enterprise,
+        site: stateData.site,
+        area: stateData.machine,
+        machine: stateData.machine,
+        stateName: stateData.stateName
+      });
+    }
+  }
+
+  // Convert to array and prioritize DOWN/IDLE equipment
+  const equipmentArray = Array.from(equipment.values());
+
+  // Sort by priority: DOWN > IDLE > others
+  equipmentArray.sort((a, b) => {
+    const priorityMap = { 'DOWN': 3, 'IDLE': 2, 'RUNNING': 1, 'UNKNOWN': 0 };
+    return (priorityMap[b.stateName] || 0) - (priorityMap[a.stateName] || 0);
+  });
+
+  // Limit to 5 work orders per analysis to avoid overwhelming maintenance team
+  return equipmentArray.slice(0, 5);
 }
 
 async function queryTrends() {
@@ -946,12 +1096,22 @@ async function analyzeTreesWithClaude(trends) {
   const trendSummary = summarizeTrends(trends);
   const domainContext = buildDomainContext(trends);
 
+  // Build filter rules section if any filters are active
+  const filterRulesSection = factoryState.anomalyFilters.length > 0
+    ? `\n## User-Defined Anomaly Filter Rules
+
+Additionally, apply these user-defined rules when identifying anomalies:
+${factoryState.anomalyFilters.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+
+These rules should modify your anomaly detection behavior accordingly.\n`
+    : '';
+
   const prompt = `You are an AI factory monitoring agent analyzing time-series trend data from a manufacturing facility.
 ${domainContext}
 ## Current Trend Data (Last 5 Minutes, 1-Minute Aggregates)
 
 ${trendSummary}
-
+${filterRulesSection}
 ## Your Task
 
 Analyze these trends and provide:
@@ -1386,6 +1546,36 @@ function handleClientRequest(ws, request) {
         }));
       });
       break;
+
+    case 'update_anomaly_filter':
+      // SECURITY: Validate filters parameter
+      if (!request.filters || !Array.isArray(request.filters)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Missing or invalid filters array' }));
+        return;
+      }
+
+      // SECURITY: Validate each filter is a string and not too long
+      const validFilters = request.filters.filter(filter => {
+        return typeof filter === 'string' && filter.length > 0 && filter.length <= 200;
+      });
+
+      // Limit number of filters
+      if (validFilters.length > 10) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Too many filters (max 10)' }));
+        return;
+      }
+
+      // Update server state
+      factoryState.anomalyFilters = validFilters;
+
+      // Broadcast to all connected clients
+      broadcastToClients({
+        type: 'anomaly_filter_update',
+        data: { filters: factoryState.anomalyFilters }
+      });
+
+      console.log(`🔍 Anomaly filters updated: ${validFilters.length} active rules`);
+      break;
   }
 }
 
@@ -1808,21 +1998,24 @@ app.get('/api/waste/trends', async (req, res) => {
           r._measurement == "edge_reject_gate_status"
         )
         |> filter(fn: (r) => r._value >= 0)
-        |> group(columns: ["enterprise", "_measurement"])
+        |> group(columns: ["enterprise", "area", "_measurement"])
         |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
     `;
 
     const trends = [];
     const byEnterprise = {};
+    const byLine = {};
 
     await new Promise((resolve) => {
       queryApi.queryRows(fluxQuery, {
         next(row, tableMeta) {
           const o = tableMeta.toObject(row);
           if (o._value !== undefined && o.enterprise && o._measurement) {
+            const line = o.area || 'Unknown Line';
             const dataPoint = {
               time: o._time,
               enterprise: o.enterprise,
+              line: line,
               value: parseFloat(o._value.toFixed(2)),
               measurement: o._measurement
             };
@@ -1833,6 +2026,17 @@ app.get('/api/waste/trends', async (req, res) => {
               byEnterprise[o.enterprise] = [];
             }
             byEnterprise[o.enterprise].push(o._value);
+
+            // Aggregate by line for bar chart
+            const lineKey = `${o.enterprise} - ${line}`;
+            if (!byLine[lineKey]) {
+              byLine[lineKey] = {
+                enterprise: o.enterprise,
+                line: line,
+                values: []
+              };
+            }
+            byLine[lineKey].values.push(o._value);
           }
         },
         error(error) {
@@ -1870,9 +2074,19 @@ app.get('/api/waste/trends', async (req, res) => {
       };
     }
 
+    // Calculate by-line summary for bar chart
+    const linesSummary = Object.values(byLine).map(line => ({
+      enterprise: line.enterprise,
+      line: line.line,
+      total: parseFloat(line.values.reduce((sum, v) => sum + v, 0).toFixed(2)),
+      avg: parseFloat((line.values.reduce((sum, v) => sum + v, 0) / line.values.length).toFixed(2)),
+      dataPoints: line.values.length
+    })).sort((a, b) => b.total - a.total); // Sort by total waste descending
+
     res.json({
       trends,
       summary,
+      linesSummary,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1961,7 +2175,113 @@ app.get('/api/waste/by-line', async (req, res) => {
     console.error('Waste by line endpoint error:', error);
     res.status(500).json({
       error: 'Failed to query waste by line',
+
+// =============================================================================
+// CMMS INTEGRATION ENDPOINTS
+// =============================================================================
+
+/**
+ * GET /api/cmms/work-orders - List recent work orders from CMMS
+ * Query params:
+ *   - limit: Number of work orders to return (default: 10, max: 50)
+ */
+app.get('/api/cmms/work-orders', async (req, res) => {
+  try {
+    if (!cmmsProvider || !cmmsProvider.isEnabled()) {
+      return res.status(503).json({
+        error: 'CMMS integration is not enabled',
+        enabled: false
+      });
+    }
+
+    // Validate limit parameter
+    let limit = parseInt(req.query.limit) || 10;
+    if (isNaN(limit) || limit < 1) limit = 10;
+    if (limit > 50) limit = 50;
+
+    const workOrders = await cmmsProvider.listRecentWorkOrders(limit);
+
+    res.json({
+      provider: cmmsProvider.getProviderName(),
+      workOrders,
+      count: workOrders.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('CMMS work orders endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve work orders',
       message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cmms/work-orders/:id - Get specific work order status
+ */
+app.get('/api/cmms/work-orders/:id', async (req, res) => {
+  try {
+    if (!cmmsProvider || !cmmsProvider.isEnabled()) {
+      return res.status(503).json({
+        error: 'CMMS integration is not enabled',
+        enabled: false
+      });
+    }
+
+    const workOrderId = req.params.id;
+    if (!workOrderId || typeof workOrderId !== 'string' || workOrderId.length > 100) {
+      return res.status(400).json({ error: 'Invalid work order ID' });
+    }
+    // Sanitize: only allow alphanumeric and common separators
+    if (!/^[a-zA-Z0-9_-]+$/.test(workOrderId)) {
+      return res.status(400).json({ error: 'Invalid work order ID format' });
+    }
+
+    const status = await cmmsProvider.getWorkOrderStatus(workOrderId);
+
+    res.json({
+      provider: cmmsProvider.getProviderName(),
+      workOrder: status,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('CMMS work order status endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve work order status',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cmms/health - Check CMMS provider health
+ */
+app.get('/api/cmms/health', async (req, res) => {
+  if (!cmmsProvider) {
+    return res.json({
+      enabled: false,
+      healthy: false,
+      message: 'CMMS provider not configured'
+    });
+  }
+
+  try {
+    const health = await cmmsProvider.healthCheck();
+
+    res.json({
+      enabled: cmmsProvider.isEnabled(),
+      ...health,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      enabled: cmmsProvider.isEnabled(),
+      healthy: false,
+      message: error.message,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -2387,7 +2707,8 @@ wss.on('connection', (ws) => {
       recentInsights: factoryState.trendInsights.slice(-5),
       recentAnomalies: factoryState.anomalies.slice(-10),
       stats: factoryState.stats,
-      insightsEnabled: !CONFIG.disableInsights
+      insightsEnabled: !CONFIG.disableInsights,
+      anomalyFilters: factoryState.anomalyFilters
     }
   }));
 

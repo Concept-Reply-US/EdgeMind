@@ -16,12 +16,10 @@
             --accent-amber: #ffbf00;
             --accent-green: #00ff88;
             --accent-red: #ff3366;
-            --reply-red: #E31937;
             --text-primary: #e8e8e8;
             --text-dim: #6b7280;
             --glow-cyan: 0 0 20px rgba(0, 255, 255, 0.5);
             --glow-magenta: 0 0 20px rgba(255, 0, 255, 0.5);
-            --glow-reply: 0 0 20px rgba(227, 25, 55, 0.5);
         }
 
         * {
@@ -148,97 +146,6 @@
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.6; }
-        }
-
-        /* Reply Branding */
-        .reply-logo {
-            position: absolute;
-            top: 20px;
-            right: 40px;
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2.5rem;
-            font-weight: 900;
-            letter-spacing: 6px;
-            color: var(--reply-red);
-            text-shadow: 0 0 10px rgba(227, 25, 55, 0.5);
-            opacity: 0.9;
-            transition: all 0.3s ease;
-        }
-
-        .reply-logo:hover {
-            opacity: 1;
-            text-shadow: var(--glow-reply);
-            transform: scale(1.05);
-        }
-
-        .reply-logo::before {
-            content: '';
-            position: absolute;
-            bottom: -4px;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--reply-red), transparent);
-            animation: replyGlow 2s ease-in-out infinite;
-        }
-
-        @keyframes replyGlow {
-            0%, 100% { opacity: 0.3; }
-            50% { opacity: 1; }
-        }
-
-        footer {
-            text-align: center;
-            padding: 40px 20px;
-            margin-top: 60px;
-            border-top: 2px solid rgba(227, 25, 55, 0.3);
-            box-shadow: 0 -2px 20px rgba(227, 25, 55, 0.2);
-            position: relative;
-        }
-
-        .footer-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .powered-by {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.85rem;
-            color: var(--text-dim);
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
-
-        .reply-footer-logo {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2rem;
-            font-weight: 900;
-            letter-spacing: 8px;
-            color: var(--reply-red);
-            text-shadow: 0 0 15px rgba(227, 25, 55, 0.5);
-            transition: all 0.3s ease;
-        }
-
-        .reply-footer-logo:hover {
-            text-shadow: var(--glow-reply);
-            transform: scale(1.05);
-        }
-
-        .footer-tagline {
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 0.9rem;
-            color: var(--text-dim);
-            font-style: italic;
-            margin-top: 5px;
-        }
-
-        .footer-divider {
-            width: 200px;
-            height: 1px;
-            background: linear-gradient(90deg, transparent, var(--reply-red), transparent);
-            margin: 10px 0;
         }
 
         /* Grid Layout */
@@ -1073,87 +980,6 @@
             color: var(--accent-red);
         }
 
-        /* Quality Metrics Panel */
-        .quality-panel {
-            grid-column: span 4;
-        }
-
-        .quality-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 15px;
-            margin-top: 15px;
-        }
-
-        .quality-card {
-            padding: 20px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 2px solid;
-            border-radius: 8px;
-            text-align: center;
-            transition: all 0.3s ease;
-        }
-
-        .quality-card.good {
-            border-color: var(--accent-green);
-            background: rgba(0, 255, 136, 0.1);
-        }
-
-        .quality-card.warning {
-            border-color: var(--accent-amber);
-            background: rgba(255, 191, 0, 0.1);
-        }
-
-        .quality-card.critical {
-            border-color: var(--accent-red);
-            background: rgba(255, 51, 102, 0.1);
-            animation: criticalPulse 1s ease-in-out infinite;
-        }
-
-        @keyframes criticalPulse {
-            0%, 100% { box-shadow: 0 0 10px rgba(255, 51, 102, 0.3); }
-            50% { box-shadow: 0 0 20px rgba(255, 51, 102, 0.6); }
-        }
-
-        .quality-enterprise {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 0.85rem;
-            color: var(--text-dim);
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .quality-rate {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 2rem;
-            font-weight: 700;
-            margin-bottom: 5px;
-        }
-
-        .quality-card.good .quality-rate { color: var(--accent-green); }
-        .quality-card.warning .quality-rate { color: var(--accent-amber); }
-        .quality-card.critical .quality-rate { color: var(--accent-red); }
-
-        .quality-trend {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.9rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 5px;
-        }
-
-        .quality-trend.rising { color: var(--accent-red); }
-        .quality-trend.stable { color: var(--accent-amber); }
-        .quality-trend.falling { color: var(--accent-green); }
-
-        .quality-total {
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-top: 8px;
-        }
-
         /* Production Line OEE Panel */
         .line-oee-panel {
             grid-column: span 6;
@@ -1615,12 +1441,8 @@
 
         /* Responsive */
         @media (max-width: 1200px) {
-            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard, .quality-panel {
+            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard {
                 grid-column: span 6;
-            }
-
-            .quality-grid {
-                grid-template-columns: repeat(3, 1fr);
             }
         }
 
@@ -1630,7 +1452,7 @@
                 letter-spacing: 4px;
             }
 
-            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard, .quality-panel {
+            .metrics, .chart-panel, .live-stream, .ai-agent, .alerts-panel, .equipment-state-panel, .line-oee-panel, .health-scorecard {
                 grid-column: span 12;
             }
 
@@ -1650,192 +1472,14 @@
             .line-oee-grid {
                 grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
             }
-
-            .quality-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .quality-rate {
-                font-size: 1.5rem;
-            }
         }
     </style>
-
-        /* Anomaly Modal Overlay */
-        .anomaly-modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(10, 14, 26, 0.9);
-            backdrop-filter: blur(8px);
-            z-index: 2000;
-            animation: fadeIn 0.2s ease;
-        }
-
-        .anomaly-modal-overlay.active {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .anomaly-modal {
-            background: var(--bg-card);
-            border: 2px solid var(--accent-cyan);
-            border-radius: 12px;
-            padding: 30px;
-            max-width: 600px;
-            width: 90%;
-            position: relative;
-            box-shadow: 0 0 40px rgba(0, 255, 255, 0.4), 0 0 80px rgba(255, 0, 255, 0.2);
-            animation: slideIn 0.3s ease;
-        }
-
-        @keyframes slideIn {
-            from {
-                transform: translateY(-30px);
-                opacity: 0;
-            }
-            to {
-                transform: translateY(0);
-                opacity: 1;
-            }
-        }
-
-        .anomaly-modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 1px solid rgba(0, 255, 255, 0.3);
-        }
-
-        .anomaly-modal-title {
-            font-family: 'Orbitron', sans-serif;
-            font-size: 1.3rem;
-            color: var(--accent-cyan);
-            text-transform: uppercase;
-            letter-spacing: 2px;
-        }
-
-        .anomaly-modal-close {
-            background: none;
-            border: 2px solid var(--accent-red);
-            color: var(--accent-red);
-            width: 32px;
-            height: 32px;
-            border-radius: 4px;
-            font-size: 1.2rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Orbitron', sans-serif;
-        }
-
-        .anomaly-modal-close:hover {
-            background: var(--accent-red);
-            color: var(--bg-dark);
-            transform: scale(1.1);
-            box-shadow: 0 0 15px var(--accent-red);
-        }
-
-        .anomaly-modal-content {
-            margin-bottom: 20px;
-        }
-
-        .anomaly-modal-text {
-            font-size: 1.1rem;
-            line-height: 1.6;
-            color: var(--text-primary);
-            margin-bottom: 20px;
-        }
-
-        .anomaly-modal-meta {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            padding: 15px;
-            background: rgba(0, 255, 255, 0.05);
-            border-radius: 6px;
-            border-left: 3px solid var(--accent-cyan);
-        }
-
-        .anomaly-modal-meta-item {
-            display: flex;
-            flex-direction: column;
-            gap: 5px;
-        }
-
-        .anomaly-modal-meta-label {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .anomaly-modal-meta-value {
-            font-family: 'Rajdhani', sans-serif;
-            font-size: 1rem;
-            font-weight: 500;
-        }
-
-        .anomaly-modal-severity {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 4px;
-            font-weight: 700;
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .anomaly-modal-severity.high {
-            background: rgba(255, 51, 102, 0.2);
-            border: 1px solid var(--accent-red);
-            color: var(--accent-red);
-        }
-
-        .anomaly-modal-severity.medium {
-            background: rgba(255, 191, 0, 0.2);
-            border: 1px solid var(--accent-amber);
-            color: var(--accent-amber);
-        }
-
-        .anomaly-modal-severity.low {
-            background: rgba(0, 255, 255, 0.2);
-            border: 1px solid var(--accent-cyan);
-            color: var(--accent-cyan);
-        }
-
-        /* Make anomaly items clickable */
-        .anomaly-item {
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .anomaly-item:hover {
-            background: rgba(255, 51, 102, 0.2);
-            border-left-width: 5px;
-            transform: translateX(5px);
-        }
 </head>
 <body>
     <div class="live-badge" id="live-badge">● DISCONNECTED</div>
 
     <div class="container">
         <header>
-            <div class="reply-logo">REPLY</div>
             <h1>EDGE MIND</h1>
             <div class="subtitle">Command Center - LIVE DATA</div>
             <div class="status-badge" id="system-status">● CONNECTING...</div>
@@ -1898,10 +1542,10 @@
             <div class="card live-stream">
                 <div class="card-title">Factory Events</div>
                 <div class="event-filter-tabs">
-                    <button class="event-tab active" onclick="filterEvents('all', this)">All</button>
-                    <button class="event-tab" onclick="filterEvents('oee', this)">OEE</button>
-                    <button class="event-tab" onclick="filterEvents('state', this)">State</button>
-                    <button class="event-tab" onclick="filterEvents('alarm', this)">Alarms</button>
+                    <button class="event-tab active" onclick="filterEvents('all')">All</button>
+                    <button class="event-tab" onclick="filterEvents('oee')">OEE</button>
+                    <button class="event-tab" onclick="filterEvents('state')">State</button>
+                    <button class="event-tab" onclick="filterEvents('alarm')">Alarms</button>
                     <button class="event-tab pause-btn" id="stream-pause-btn" onclick="toggleStreamPause()">
                         <span id="pause-btn-text">⏸ Pause</span>
                     </button>
@@ -1926,8 +1570,8 @@
                     </div>
                 </div>
                 <div class="insight-tabs">
-                    <button class="insight-tab active" onclick="filterInsights('all', this)">All Insights</button>
-                    <button class="insight-tab" onclick="filterInsights('anomalies', this)">Anomalies (<span id="anomaly-tab-count">0</span>)</button>
+                    <button class="insight-tab active" onclick="filterInsights('all')">All Insights</button>
+                    <button class="insight-tab" onclick="filterInsights('anomalies')">Anomalies (<span id="anomaly-tab-count">0</span>)</button>
                 </div>
                 <div class="anomaly-filter-control">
                     <div class="filter-input-group">
@@ -2040,19 +1684,6 @@
             </div>
 
             <div class="card chart-panel">
-                <div class="card-title">Scrap by Production Line</div>
-                <canvas id="scrap-by-line-chart"></canvas>
-            </div>
-
-            <!-- Quality Metrics Panel -->
-            <div class="card quality-panel">
-                <div class="card-title">Quality Metrics by Enterprise</div>
-                <div class="quality-grid" id="quality-grid">
-                    <div class="heatmap-loading">Loading quality metrics...</div>
-                </div>
-            </div>
-
-            <div class="card chart-panel">
                 <div class="card-title">Production Heatmap</div>
                 <div class="heatmap-container" id="production-heatmap">
                     <div class="heatmap-loading">Loading factory status...</div>
@@ -2152,7 +1783,6 @@
         // Initialize Charts
         window.oeeBreakdownChart = null;
         window.wasteTrendChart = null;
-        window.scrapByLineChart = null;
 
         function initializeCharts() {
             // OEE Breakdown Chart (Horizontal Bar Chart)
@@ -2206,65 +1836,52 @@
                 }
             });
 
-            // Waste Trend Chart (Bar Chart - Grouped by Line)
+            // Waste Trend Chart (Line Chart)
             const wasteTrendCtx = document.getElementById('waste-trend-chart').getContext('2d');
             window.wasteTrendChart = new Chart(wasteTrendCtx, {
-                type: 'bar',
+                type: 'line',
                 data: {
-                    labels: [], // Line names
-                    datasets: [{
-                        label: 'Total Waste/Defects',
-                        data: [],
-                        backgroundColor: [],
-                        borderColor: [],
-                        borderWidth: 2
-                    }]
+                    labels: [], // Time labels
+                    datasets: [
+                        {
+                            label: 'Enterprise A',
+                            data: [],
+                            borderColor: 'rgba(0, 255, 255, 0.8)',
+                            backgroundColor: 'rgba(0, 255, 255, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Enterprise B',
+                            data: [],
+                            borderColor: 'rgba(255, 0, 255, 0.8)',
+                            backgroundColor: 'rgba(255, 0, 255, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        },
+                        {
+                            label: 'Enterprise C',
+                            data: [],
+                            borderColor: 'rgba(255, 191, 0, 0.8)',
+                            backgroundColor: 'rgba(255, 191, 0, 0.1)',
+                            fill: true,
+                            tension: 0.3
+                        }
+                    ]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    onClick: (event, activeElements) => {
-                        if (activeElements.length > 0) {
-                            const index = activeElements[0].index;
-                            const label = window.wasteTrendChart.data.labels[index];
-                            const value = window.wasteTrendChart.data.datasets[0].data[index];
-                            const enterprise = window.wasteTrendChart.data.datasets[0].enterprises[index];
-                            alert(`Line: ${label}\nEnterprise: ${enterprise}\nTotal Waste/Defects: ${value}`);
-                        }
-                    },
                     plugins: {
                         legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(10, 14, 26, 0.9)',
-                            titleColor: '#00ffff',
-                            bodyColor: '#e8e8e8',
-                            borderColor: '#00ffff',
-                            borderWidth: 1,
-                            padding: 12,
-                            displayColors: true,
-                            callbacks: {
-                                title: (context) => {
-                                    return `Line: ${context[0].label}`;
-                                },
-                                label: (context) => {
-                                    const enterprise = context.dataset.enterprises[context.dataIndex];
-                                    return [
-                                        `Enterprise: ${enterprise}`,
-                                        `Total: ${context.parsed.y} defects`
-                                    ];
-                                }
-                            }
+                            display: true,
+                            labels: { color: '#e8e8e8' }
                         }
                     },
                     scales: {
                         x: {
-                            ticks: {
-                                color: '#e8e8e8',
-                                font: { size: 11 }
-                            },
-                            grid: { display: false }
+                            ticks: { color: '#6b7280' },
+                            grid: { color: 'rgba(0, 255, 255, 0.1)' }
                         },
                         y: {
                             ticks: { color: '#6b7280' },
@@ -2272,51 +1889,9 @@
                             beginAtZero: true,
                             title: {
                                 display: true,
-                                text: 'Total Waste/Defects',
+                                text: 'Defects',
                                 color: '#e8e8e8'
                             }
-                        }
-                    }
-                }
-            });
-
-            // Scrap by Line Chart (Horizontal Bar Chart)
-            const scrapByLineCtx = document.getElementById('scrap-by-line-chart').getContext('2d');
-            window.scrapByLineChart = new Chart(scrapByLineCtx, {
-                type: 'bar',
-                data: {
-                    labels: [],
-                    datasets: [{
-                        label: 'Total Scrap',
-                        data: [],
-                        backgroundColor: 'rgba(255, 82, 82, 0.6)',  // Accent red
-                        borderColor: 'rgba(255, 82, 82, 1)',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',  // Horizontal bars
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        x: {
-                            ticks: { color: '#6b7280' },
-                            grid: { color: 'rgba(255, 82, 82, 0.1)' },
-                            beginAtZero: true,
-                            title: {
-                                display: true,
-                                text: 'Scrap Count',
-                                color: '#e8e8e8'
-                            }
-                        },
-                        y: {
-                            ticks: { color: '#e8e8e8', font: { size: 12 } },
-                            grid: { display: false }
                         }
                     }
                 }
@@ -2356,162 +1931,32 @@
                 const response = await fetch('/api/waste/trends');
                 const data = await response.json();
 
-                if (window.wasteTrendChart && data.linesSummary) {
-                    // Map enterprise to colors
-                    const enterpriseColors = {
-                        'Enterprise A': {
-                            bg: 'rgba(0, 255, 255, 0.6)',
-                            border: 'rgba(0, 255, 255, 1)'
-                        },
-                        'Enterprise B': {
-                            bg: 'rgba(255, 0, 255, 0.6)',
-                            border: 'rgba(255, 0, 255, 1)'
-                        },
-                        'Enterprise C': {
-                            bg: 'rgba(255, 191, 0, 0.6)',
-                            border: 'rgba(255, 191, 0, 1)'
-                        }
+                if (window.wasteTrendChart && data.trends) {
+                    // Group trends by enterprise
+                    const enterpriseData = {
+                        'Enterprise A': [],
+                        'Enterprise B': [],
+                        'Enterprise C': []
                     };
+                    const timeLabels = new Set();
 
-                    // Sort and prepare data for bar chart
-                    const sortedLines = data.linesSummary.sort((a, b) => b.total - a.total);
-
-                    const labels = sortedLines.map(item => item.line);
-                    const values = sortedLines.map(item => item.total);
-                    const enterprises = sortedLines.map(item => item.enterprise);
-                    const backgroundColors = sortedLines.map(item =>
-                        enterpriseColors[item.enterprise]?.bg || 'rgba(128, 128, 128, 0.6)'
-                    );
-                    const borderColors = sortedLines.map(item =>
-                        enterpriseColors[item.enterprise]?.border || 'rgba(128, 128, 128, 1)'
-                    );
+                    data.trends.forEach(t => {
+                        const hour = new Date(t.time).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                        timeLabels.add(hour);
+                        if (enterpriseData[t.enterprise]) {
+                            enterpriseData[t.enterprise].push({ time: hour, value: t.value });
+                        }
+                    });
 
                     // Update chart
-                    window.wasteTrendChart.data.labels = labels;
-                    window.wasteTrendChart.data.datasets[0].data = values;
-                    window.wasteTrendChart.data.datasets[0].backgroundColor = backgroundColors;
-                    window.wasteTrendChart.data.datasets[0].borderColor = borderColors;
-                    window.wasteTrendChart.data.datasets[0].enterprises = enterprises;
+                    window.wasteTrendChart.data.labels = Array.from(timeLabels).slice(-24);
+                    window.wasteTrendChart.data.datasets[0].data = enterpriseData['Enterprise A'].map(d => d.value);
+                    window.wasteTrendChart.data.datasets[1].data = enterpriseData['Enterprise B'].map(d => d.value);
+                    window.wasteTrendChart.data.datasets[2].data = enterpriseData['Enterprise C'].map(d => d.value);
                     window.wasteTrendChart.update('none');
                 }
             } catch (error) {
                 console.error('Failed to fetch waste trends:', error);
-            }
-        }
-
-        // Fetch scrap by line and update chart
-        async function fetchScrapByLine() {
-            try {
-                const response = await fetch('/api/waste/by-line');
-                const data = await response.json();
-
-                if (window.scrapByLineChart && data.lines) {
-                    // Get top 10 worst lines
-                    const top10Lines = data.lines.slice(0, 10);
-
-                    // Format labels as "Site / Line"
-                    const labels = top10Lines.map(line => `${line.site} / ${line.line}`);
-                    const values = top10Lines.map(line => line.total);
-
-                    // Update chart
-                    window.scrapByLineChart.data.labels = labels;
-                    window.scrapByLineChart.data.datasets[0].data = values;
-                    window.scrapByLineChart.update('none');
-                }
-            } catch (error) {
-                console.error('Failed to fetch scrap by line:', error);
-            }
-        }
-
-        // Fetch and render quality metrics from waste/trends summary
-        async function fetchQualityMetrics() {
-            try {
-                const response = await fetch('/api/waste/trends');
-                const data = await response.json();
-
-                const grid = document.getElementById('quality-grid');
-                if (!grid || !data.summary) return;
-
-                // Enterprise display mapping
-                const enterpriseNames = {
-                    'Enterprise A': { short: 'ENT A', industry: 'Glass Mfg' },
-                    'Enterprise B': { short: 'ENT B', industry: 'Beverage' },
-                    'Enterprise C': { short: 'ENT C', industry: 'Pharma' }
-                };
-
-                // Thresholds for color coding (based on average waste per hour)
-                const getStatus = (avg, enterprise) => {
-                    // Different thresholds per enterprise type
-                    if (enterprise === 'Enterprise C') {
-                        // Pharma - very low tolerance
-                        if (avg < 50) return 'good';
-                        if (avg < 100) return 'warning';
-                        return 'critical';
-                    } else if (enterprise === 'Enterprise B') {
-                        // Beverage - moderate volume
-                        if (avg < 50000) return 'good';
-                        if (avg < 100000) return 'warning';
-                        return 'critical';
-                    } else {
-                        // Glass - high volume acceptable
-                        if (avg < 500000) return 'good';
-                        if (avg < 750000) return 'warning';
-                        return 'critical';
-                    }
-                };
-
-                // Trend arrows
-                const trendArrow = (trend) => {
-                    switch(trend) {
-                        case 'rising': return '↑';
-                        case 'falling': return '↓';
-                        default: return '→';
-                    }
-                };
-
-                // Format large numbers
-                const formatNumber = (num) => {
-                    if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
-                    if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
-                    return num.toFixed(0);
-                };
-
-                let html = '';
-                ['Enterprise A', 'Enterprise B', 'Enterprise C'].forEach(enterprise => {
-                    const summary = data.summary[enterprise];
-                    if (summary) {
-                        const status = getStatus(summary.avg, enterprise);
-                        const info = enterpriseNames[enterprise];
-                        html += `
-                            <div class="quality-card ${status}">
-                                <div class="quality-enterprise">${info.short}</div>
-                                <div class="quality-rate">${formatNumber(summary.avg)}</div>
-                                <div class="quality-trend ${summary.trend}">
-                                    ${trendArrow(summary.trend)} ${summary.trend}
-                                </div>
-                                <div class="quality-total">24h Total: ${formatNumber(summary.total)}</div>
-                            </div>
-                        `;
-                    } else {
-                        const info = enterpriseNames[enterprise];
-                        html += `
-                            <div class="quality-card good">
-                                <div class="quality-enterprise">${info.short}</div>
-                                <div class="quality-rate">--</div>
-                                <div class="quality-trend stable">No data</div>
-                                <div class="quality-total">24h Total: --</div>
-                            </div>
-                        `;
-                    }
-                });
-
-                grid.innerHTML = html;
-            } catch (error) {
-                console.error('Failed to fetch quality metrics:', error);
-                const grid = document.getElementById('quality-grid');
-                if (grid) {
-                    grid.innerHTML = '<div class="heatmap-loading">Failed to load quality metrics</div>';
-                }
             }
         }
 
@@ -2646,13 +2091,6 @@
                     state.insights = message.data.recentInsights || [];
                     state.anomalies = message.data.recentAnomalies || [];
                     state.stats = message.data.stats || state.stats;
-
-                    // Load anomaly filters from server
-                    if (message.data.anomalyFilters && Array.isArray(message.data.anomalyFilters)) {
-                        state.anomalyFilters = message.data.anomalyFilters;
-                        renderActiveFilters();
-                    }
-
                     updateUI();
 
                     // Show sleeping agent message if insights are disabled
@@ -3362,80 +2800,14 @@
         }
 
         // Filter insights by type
-
-        // Anomaly Modal Functions
-        function openAnomalyModal(anomaly) {
-            const overlay = document.getElementById('anomaly-modal-overlay');
-            const textEl = document.getElementById('anomaly-modal-text');
-            const severityEl = document.getElementById('anomaly-modal-severity');
-            const timestampEl = document.getElementById('anomaly-modal-timestamp');
-
-            if (!overlay || !textEl || !severityEl || !timestampEl) return;
-
-            // Populate modal with static snapshot of anomaly data
-            textEl.textContent = anomaly.text;
-            
-            // Format severity badge
-            const severity = anomaly.severity || 'medium';
-            const severityUpper = severity.toUpperCase();
-            severityEl.innerHTML = '<span class="anomaly-modal-severity ' + severity + '">' + severityUpper + '</span>';
-            
-            // Format timestamp
-            const date = new Date(anomaly.timestamp);
-            const formattedDate = date.toLocaleString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit'
-            });
-            timestampEl.textContent = formattedDate;
-
-            // Show modal
-            overlay.classList.add('active');
-        }
-
-        function closeAnomalyModal() {
-            const overlay = document.getElementById('anomaly-modal-overlay');
-            if (overlay) {
-                overlay.classList.remove('active');
-            }
-        }
-
-        // Setup modal event listeners when DOM is ready
-        document.addEventListener('DOMContentLoaded', function() {
-            // Close button click
-            const closeBtn = document.getElementById('close-anomaly-modal');
-            if (closeBtn) {
-                closeBtn.addEventListener('click', closeAnomalyModal);
-            }
-
-            // Click outside modal to close
-            const overlay = document.getElementById('anomaly-modal-overlay');
-            if (overlay) {
-                overlay.addEventListener('click', function(e) {
-                    if (e.target === overlay) {
-                        closeAnomalyModal();
-                    }
-                });
-            }
-
-            // Escape key to close
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape') {
-                    closeAnomalyModal();
-                }
-            });
-        });
-        function filterInsights(filterType, clickedTab) {
+        function filterInsights(filterType) {
             state.insightFilter = filterType;
 
             // Update tab styling
             document.querySelectorAll('.insight-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            if (clickedTab) clickedTab.classList.add('active');
+            event.target.classList.add('active');
 
             // Re-render insights
             const container = document.getElementById('claude-insights-container');
@@ -3459,8 +2831,6 @@
                             <div>${anomaly.text}</div>
                             <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleTimeString()}</div>
                         `;
-                        // Add click handler to open modal with static anomaly snapshot
-                        el.addEventListener('click', () => openAnomalyModal(anomaly));
                         container.appendChild(el);
                     });
                 }
@@ -3486,12 +2856,6 @@
 
             const filterRule = input.value.trim();
             if (!filterRule || filterRule.length === 0) {
-                return;
-            }
-
-            // Check max filter limit
-            if (state.anomalyFilters.length >= 10) {
-                alert('Maximum 10 filter rules allowed');
                 return;
             }
 
@@ -3558,14 +2922,14 @@
         });
 
         // Filter events by type
-        function filterEvents(eventType, clickedTab) {
+        function filterEvents(eventType) {
             state.eventFilter = eventType;
 
             // Update tab styling
-            document.querySelectorAll('.event-tab:not(.pause-btn)').forEach(tab => {
+            document.querySelectorAll('.event-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            if (clickedTab) clickedTab.classList.add('active');
+            event.target.classList.add('active');
 
             // Show/hide events based on filter
             const stream = document.getElementById('mqtt-stream');
@@ -3618,8 +2982,6 @@
             fetchOEEBreakdown();
             fetchFactoryStatus();
             fetchWasteTrends();
-            fetchScrapByLine();
-            fetchQualityMetrics();
 
             // Fetch equipment states and line OEE
             fetchEquipmentStates();
@@ -3633,8 +2995,6 @@
             setInterval(fetchOEEBreakdown, 30000);
             setInterval(fetchFactoryStatus, 30000);
             setInterval(fetchWasteTrends, 30000);
-            setInterval(fetchScrapByLine, 30000);
-            setInterval(fetchQualityMetrics, 30000);
 
             // Refresh equipment states and line OEE every 30 seconds
             setInterval(fetchEquipmentStates, 30000);
@@ -3649,38 +3009,5 @@
             }
         };
     </script>
-
-    <!-- Anomaly Details Modal -->
-    <div class="anomaly-modal-overlay" id="anomaly-modal-overlay">
-        <div class="anomaly-modal">
-            <div class="anomaly-modal-header">
-                <div class="anomaly-modal-title">Anomaly Details</div>
-                <button class="anomaly-modal-close" id="close-anomaly-modal">×</button>
-            </div>
-            <div class="anomaly-modal-content">
-                <div class="anomaly-modal-text" id="anomaly-modal-text"></div>
-                <div class="anomaly-modal-meta">
-                    <div class="anomaly-modal-meta-item">
-                        <div class="anomaly-modal-meta-label">Severity</div>
-                        <div class="anomaly-modal-meta-value" id="anomaly-modal-severity"></div>
-                    </div>
-                    <div class="anomaly-modal-meta-item">
-                        <div class="anomaly-modal-meta-label">Detected At</div>
-                        <div class="anomaly-modal-meta-value" id="anomaly-modal-timestamp"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Footer -->
-    <footer>
-        <div class="footer-content">
-            <div class="powered-by">Powered by</div>
-            <div class="reply-footer-logo">REPLY</div>
-            <div class="footer-divider"></div>
-            <div class="footer-tagline">Driving Digital Transformation</div>
-        </div>
-    </footer>
 </body>
 </html>

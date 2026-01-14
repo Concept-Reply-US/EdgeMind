@@ -1,0 +1,99 @@
+========================================
+ANOMALY FILTER FEATURE - IMPLEMENTATION SUMMARY
+========================================
+
+FEATURE OVERVIEW:
+----------------
+Real-time anomaly filtering UI that modifies Claude's analysis behavior through natural language filter rules.
+
+KEY COMPONENTS:
+--------------
+
+1. FRONTEND (index.html)
+   ✓ Filter input field added to AI Agent Panel
+   ✓ Submit button with "Add Filter" action
+   ✓ Active filters displayed as dismissable chips
+   ✓ Enter key support for quick submission
+   ✓ CSS styling with cyberpunk magenta theme
+   ✓ JavaScript functions for add/remove/render
+   ✓ WebSocket message handling
+   ✓ State synchronization across clients
+
+2. BACKEND (server.js)
+   ✓ anomalyFilters array in factoryState
+   ✓ update_anomaly_filter WebSocket handler
+   ✓ Input validation (max 10 filters, 200 chars each)
+   ✓ Broadcast to all connected clients
+   ✓ Claude prompt modification with filter rules
+   ✓ Security: whitelist, sanitization, limits
+
+WEBSOCKET FLOW:
+--------------
+Client → Server: update_anomaly_filter (filters array)
+Server → All Clients: anomaly_filter_update (broadcast)
+Server → Claude: Appends filters to analysis prompt
+
+CLAUDE INTEGRATION:
+------------------
+When filters are active, analyzeTreesWithClaude() adds this section:
+
+## User-Defined Anomaly Filter Rules
+
+Additionally, apply these user-defined rules when identifying anomalies:
+1. [filter rule 1]
+2. [filter rule 2]
+...
+
+These rules should modify your anomaly detection behavior accordingly.
+
+EXAMPLE USAGE:
+-------------
+1. User types: "ignore anomalies below 10% deviation"
+2. Clicks "Add Filter" or presses Enter
+3. Filter appears as chip with × remove button
+4. WebSocket sends filters to server
+5. Server broadcasts to all clients
+6. Claude's next analysis (30s interval) applies the rule
+
+LOCATION IN UI:
+--------------
+AI Agent Panel → Edge Minder section
+- Below the "All Insights / Anomalies" tabs
+- Above the insights container
+- Magenta-themed control panel
+
+FILES MODIFIED:
+--------------
+✓ index.html (~150 lines added)
+  - HTML structure for filter UI
+  - CSS styles for filter components
+  - JavaScript functions and handlers
+
+✓ server.js (~50 lines added)
+  - State management
+  - WebSocket handler
+  - Claude prompt modification
+
+SECURITY FEATURES:
+-----------------
+✓ Input validation (string, length checks)
+✓ Array size limits (max 10 filters)
+✓ Whitelisted message type
+✓ Character limit per filter (200 chars)
+✓ Type checking on all inputs
+
+TESTING CHECKLIST:
+-----------------
+[ ] Start server: node server.js
+[ ] Open browser to http://localhost:3000
+[ ] Locate filter input in AI Agent Panel
+[ ] Add filter rule (e.g., "ignore minor fluctuations")
+[ ] Verify filter chip appears
+[ ] Remove filter using × button
+[ ] Test Enter key submission
+[ ] Open second browser tab
+[ ] Verify filters sync across tabs
+[ ] Wait for Claude analysis (30s)
+[ ] Check anomalies respect filter rules
+
+STATUS: ✓ IMPLEMENTATION COMPLETE
