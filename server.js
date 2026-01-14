@@ -3,7 +3,7 @@ const mqtt = require('mqtt');
 const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
 const WebSocket = require('ws');
 const express = require('express');
-const { InfluxDB, Point } = require('@influxdata/influxdb-client');
+const { influxDB, writeApi, queryApi, Point, parseTopicToInflux } = require('./lib/influx/client');
 const { createCmmsProvider } = require('./lib/cmms-interface');
 
 // Foundation modules
@@ -25,7 +25,7 @@ const {
   classifyMeasurement,
   getEnterpriseContext
 } = require('./lib/domain-context');
-const { refreshSchemaCache, refreshHierarchyCache } = require('./lib/schema');
+const { refreshSchemaCache, refreshHierarchyCache, classifyMeasurementDetailed } = require('./lib/schema');
 const {
   OEE_TIERS,
   OEE_PATTERNS,
@@ -60,10 +60,7 @@ if (CONFIG.cmms.enabled) {
 // Serve static files (frontend HTML)
 app.use(express.static(__dirname));
 
-// InfluxDB setup
-const influxDB = new InfluxDB({ url: CONFIG.influxdb.url, token: CONFIG.influxdb.token });
-const writeApi = influxDB.getWriteApi(CONFIG.influxdb.org, CONFIG.influxdb.bucket, 'ns');
-const queryApi = influxDB.getQueryApi(CONFIG.influxdb.org);
+// InfluxDB client, writeApi, and queryApi are now imported from './lib/influx/client'
 
 // Agentic loop state
 let lastTrendAnalysis = Date.now();
@@ -107,33 +104,7 @@ mqttClient.on('error', (error) => {
   console.error('❌ MQTT Error:', error);
 });
 
-// Parse MQTT topic into measurement and tags
-function parseTopicToInflux(topic, payload) {
-  // Topic format: Enterprise X/SiteY/area/machine/component/metric/type
-  const parts = topic.split('/');
-
-  // Try to parse payload as number
-  let value = parseFloat(payload);
-  const isNumeric = !isNaN(value);
-
-  // Create measurement name from last 2-3 parts of topic
-  const measurement = parts.slice(-2).join('_').replace(/[^a-zA-Z0-9_]/g, '_');
-
-  const point = new Point(measurement)
-    .tag('enterprise', parts[0] || 'unknown')
-    .tag('site', parts[1] || 'unknown')
-    .tag('area', parts[2] || 'unknown')
-    .tag('machine', parts[3] || 'unknown')
-    .tag('full_topic', topic);
-
-  if (isNumeric) {
-    point.floatField('value', value);
-  } else {
-    point.stringField('value', payload.substring(0, 200)); // Limit string length
-  }
-
-  return point;
-}
+// parseTopicToInflux is now imported from './lib/influx/client'
 
 // Handle incoming MQTT messages
 mqttClient.on('message', async (topic, message) => {
