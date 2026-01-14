@@ -4,6 +4,7 @@ const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-be
 const WebSocket = require('ws');
 const express = require('express');
 const { InfluxDB, Point } = require('@influxdata/influxdb-client');
+const { createCmmsProvider } = require('./lib/cmms-interface');
 
 // Configuration
 const CONFIG = {
@@ -23,12 +24,38 @@ const CONFIG = {
     org: process.env.INFLUXDB_ORG || 'proveit',
     bucket: process.env.INFLUXDB_BUCKET || 'factory'
   },
-  disableInsights: process.env.DISABLE_INSIGHTS === 'true'
+  disableInsights: process.env.DISABLE_INSIGHTS === 'true',
+  cmms: {
+    enabled: process.env.CMMS_ENABLED === 'true',
+    provider: process.env.CMMS_PROVIDER || 'maintainx',
+    maintainx: {
+      apiKey: process.env.MAINTAINX_API_KEY || '',
+      baseUrl: process.env.MAINTAINX_BASE_URL || 'https://api.getmaintainx.com/v1',
+      defaultLocationId: process.env.MAINTAINX_DEFAULT_LOCATION_ID || null,
+      defaultAssigneeId: process.env.MAINTAINX_DEFAULT_ASSIGNEE_ID || null
+    }
+  }
 };
 
 // Initialize services
 const app = express();
 const bedrockClient = new BedrockRuntimeClient({ region: CONFIG.bedrock.region });
+
+// Initialize CMMS provider
+let cmmsProvider = null;
+if (CONFIG.cmms.enabled) {
+  try {
+    cmmsProvider = createCmmsProvider(CONFIG.cmms.provider, {
+      enabled: true,
+      ...CONFIG.cmms[CONFIG.cmms.provider]
+    });
+    console.log(`✅ CMMS provider initialized: ${cmmsProvider.getProviderName()}`);
+  } catch (error) {
+    console.error(`❌ Failed to initialize CMMS provider: ${error.message}`);
+  }
+} else {
+  console.log('📋 CMMS integration disabled');
+}
 
 // Serve static files (frontend HTML)
 app.use(express.static(__dirname));
@@ -44,6 +71,7 @@ const factoryState = {
   anomalies: [],
   insights: [],
   trendInsights: [],
+  anomalyFilters: [], // User-defined filter rules for Claude analysis
   stats: {
     messageCount: 0,
     anomalyCount: 0,
@@ -62,6 +90,17 @@ const schemaCache = {
   CACHE_TTL_MS: 5 * 60 * 1000 // 5 minutes
 };
 
+// Equipment state cache
+const equipmentStateCache = {
+  states: new Map(), // Map<equipmentKey, stateData>
+  CACHE_TTL_MS: 60 * 1000, // 1 minute
+  STATE_CODES: {
+    1: { name: 'DOWN', color: 'red', priority: 3 },
+    2: { name: 'IDLE', color: 'yellow', priority: 2 },
+    3: { name: 'RUNNING', color: 'green', priority: 1 }
+  }
+};
+
 /**
  * Sanitizes InfluxDB identifiers to prevent Flux query injection.
  * Removes potentially dangerous characters like quotes and backslashes.
@@ -71,6 +110,28 @@ const schemaCache = {
 function sanitizeInfluxIdentifier(identifier) {
   if (typeof identifier !== 'string') return '';
   return identifier.replace(/["\\]/g, '');
+}
+
+/**
+ * Formats a duration in milliseconds into a human-readable string.
+ * @param {number} durationMs - Duration in milliseconds
+ * @returns {string} Formatted duration (e.g., "2h 15m", "45s")
+ */
+function formatDuration(durationMs) {
+  const seconds = Math.floor(durationMs / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
 }
 
 // =============================================================================
@@ -87,7 +148,7 @@ const VALID_ENTERPRISES = ['ALL', 'Enterprise A', 'Enterprise B', 'Enterprise C'
  * Valid WebSocket message types.
  * SECURITY: Whitelist approach prevents processing of unknown message types.
  */
-const VALID_WS_MESSAGE_TYPES = ['get_stats', 'ask_claude'];
+const VALID_WS_MESSAGE_TYPES = ['get_stats', 'ask_claude', 'update_anomaly_filter'];
 
 /**
  * Maximum length for user-provided strings.
@@ -164,6 +225,71 @@ const MEASUREMENT_CLASSIFICATIONS = {
   counter: ['count', 'total', 'produced', 'rejected', 'scrap', 'waste', 'good'],
   timing: ['time', 'duration', 'cycle', 'downtime', 'uptime', 'runtime'],
   description: [] // Fallback for string values
+};
+
+// =============================================================================
+// ENTERPRISE DOMAIN CONTEXT
+// =============================================================================
+
+/**
+ * Domain-specific context for each enterprise.
+ * Provides industry knowledge and safety ranges for AI-powered insights.
+ */
+const ENTERPRISE_DOMAIN_CONTEXT = {
+  'Enterprise A': {
+    industry: 'Glass Manufacturing',
+    domain: 'glass',
+    equipment: {
+      'Furnace': { type: 'glass-furnace', normalTemp: [2650, 2750], unit: '°F' },
+      'ISMachine': { type: 'forming-machine', cycleTime: [8, 12], unit: 'sec' },
+      'Lehr': { type: 'annealing-oven', tempGradient: [1050, 400] }
+    },
+    criticalMetrics: ['temperature', 'gob_weight', 'defect_count'],
+    concerns: ['thermal_shock', 'crown_temperature', 'refractory_wear'],
+    safeRanges: {
+      'furnace_temp': { min: 2600, max: 2800, unit: '°F', critical: true },
+      'crown_temp': { min: 2400, max: 2600, unit: '°F' }
+    },
+    wasteMetrics: ['OEE_Waste', 'Production_DefectCHK', 'Production_DefectDIM', 'Production_DefectSED', 'Production_RejectCount'],
+    wasteThresholds: { warning: 10, critical: 25, unit: 'defects/hr' }
+  },
+  'Enterprise B': {
+    industry: 'Beverage Bottling',
+    domain: 'beverage',
+    equipment: {
+      'Filler': { type: 'bottle-filler', normalSpeed: [400, 600], unit: 'BPM' },
+      'Labeler': { type: 'labeling-machine', accuracy: 99.5 },
+      'Palletizer': { type: 'palletizing-robot', cycleTime: [10, 15] }
+    },
+    criticalMetrics: ['countinfeed', 'countoutfeed', 'countdefect', 'oee'],
+    concerns: ['line_efficiency', 'changeover_time', 'reject_rate'],
+    rawCounterFields: ['countinfeed', 'countoutfeed', 'countdefect'],
+    safeRanges: {
+      'reject_rate': { max: 2, unit: '%', warning: 1.5 },
+      'filler_speed': { min: 350, max: 650, unit: 'BPM' }
+    },
+    wasteMetrics: ['count_defect', 'input_countdefect', 'workorder_quantitydefect'],
+    wasteThresholds: { warning: 50, critical: 100, unit: 'defects/hr' }
+  },
+  'Enterprise C': {
+    industry: 'Bioprocessing / Pharma',
+    domain: 'pharma',
+    batchControl: 'ISA-88',
+    equipment: {
+      'SUM': { type: 'single-use-mixer', phase: 'preparation' },
+      'SUB': { type: 'single-use-bioreactor', phase: 'cultivation' },
+      'CHROM': { type: 'chromatography', phase: 'purification' },
+      'TFF': { type: 'tangential-flow-filtration', phase: 'filtration' }
+    },
+    criticalMetrics: ['PV_percent', 'phase', 'batch_id'],
+    concerns: ['contamination', 'batch_deviation', 'sterility'],
+    safeRanges: {
+      'pH': { min: 6.8, max: 7.4, critical: true },
+      'dissolved_oxygen': { min: 30, max: 70, unit: '%' }
+    },
+    wasteMetrics: ['chrom_CHR01_WASTE_PV'],
+    wasteThresholds: { warning: 5, critical: 15, unit: 'L' }
+  }
 };
 
 // =============================================================================
@@ -619,6 +745,75 @@ mqttClient.on('message', async (topic, message) => {
     console.log(`[SCHEMA] New measurement detected: ${measurement} from topic: ${topic}`);
   }
 
+  // Detect and cache equipment state changes
+  const topicLower = topic.toLowerCase();
+  if (topicLower.includes('statecurrent') || (topicLower.includes('state') && !topicLower.includes('statereason'))) {
+    const parts = topic.split('/');
+    if (parts.length >= 3) {
+      const enterprise = parts[0];
+      const site = parts[1];
+      // Machine could be at different positions depending on structure
+      const machine = parts.length >= 4 ? parts[3] : parts[2];
+      const equipmentKey = `${enterprise}/${site}/${machine}`;
+
+      // Parse state value - support both numeric (1=DOWN, 2=IDLE, 3=RUNNING) and string values
+      let stateValue = null;
+      let stateInfo = null;
+
+      const numValue = parseInt(payload);
+      if (!isNaN(numValue) && equipmentStateCache.STATE_CODES[numValue]) {
+        stateValue = numValue;
+        stateInfo = equipmentStateCache.STATE_CODES[numValue];
+      } else {
+        // Check for string state values
+        const payloadLower = String(payload).toLowerCase();
+        if (payloadLower.includes('down') || payloadLower.includes('stop') || payloadLower.includes('fault') || payloadLower === '1') {
+          stateValue = 1;
+          stateInfo = equipmentStateCache.STATE_CODES[1];
+        } else if (payloadLower.includes('idle') || payloadLower.includes('standby') || payloadLower.includes('wait') || payloadLower === '2') {
+          stateValue = 2;
+          stateInfo = equipmentStateCache.STATE_CODES[2];
+        } else if (payloadLower.includes('run') || payloadLower.includes('active') || payloadLower.includes('operating') || payloadLower === '3') {
+          stateValue = 3;
+          stateInfo = equipmentStateCache.STATE_CODES[3];
+        }
+      }
+
+      if (stateValue && stateInfo) {
+        const existingState = equipmentStateCache.states.get(equipmentKey);
+
+        // Only update if state changed or first time seen
+        if (!existingState || existingState.state !== stateValue) {
+          const stateData = {
+            enterprise,
+            site,
+            machine,
+            state: stateValue,
+            stateName: stateInfo.name,
+            color: stateInfo.color,
+            reason: null,
+            lastUpdate: timestamp,
+            firstSeen: existingState ? existingState.firstSeen : timestamp
+          };
+
+          equipmentStateCache.states.set(equipmentKey, stateData);
+
+          // Broadcast state change to WebSocket clients
+          broadcastToClients({
+            type: 'equipment_state',
+            data: {
+              ...stateData,
+              durationMs: Date.now() - new Date(stateData.firstSeen).getTime(),
+              durationFormatted: formatDuration(Date.now() - new Date(stateData.firstSeen).getTime())
+            }
+          });
+
+          console.log(`[STATE] ${equipmentKey}: ${stateInfo.name}`);
+        }
+      }
+    }
+  }
+
   // Write to InfluxDB
   try {
     const point = parseTopicToInflux(topic, payload);
@@ -701,11 +896,133 @@ async function runTrendAnalysis() {
       });
 
       console.log('✨ Trend Analysis:', insight.summary);
+
+      // CMMS Integration: Create work orders for high-severity anomalies
+      if (cmmsProvider && cmmsProvider.isEnabled() && insight.severity === 'high' && insight.anomalies?.length > 0) {
+        processAnomaliesForWorkOrders(insight, trends);
+      }
     }
 
   } catch (error) {
     console.error('❌ Trend analysis error:', error.message);
   }
+}
+
+/**
+ * Processes high-severity anomalies and creates CMMS work orders.
+ * Deduplicates by equipment to avoid creating multiple work orders for the same machine.
+ *
+ * @param {Object} insight - Claude analysis insight
+ * @param {Array} trends - Trend data used for context
+ */
+async function processAnomaliesForWorkOrders(insight, trends) {
+  console.log(`🔧 Processing ${insight.anomalies.length} anomalies for work order creation...`);
+
+  try {
+    // Extract affected equipment from trends and equipment state cache
+    const affectedEquipment = extractAffectedEquipment(trends, insight);
+
+    if (affectedEquipment.length === 0) {
+      console.log('🔧 No specific equipment identified for work order creation');
+      return;
+    }
+
+    // Create work orders for each affected piece of equipment
+    const workOrderPromises = affectedEquipment.map(async (equipment) => {
+      try {
+        const workOrder = await cmmsProvider.createWorkOrder(insight, equipment);
+
+        // Broadcast work order creation to WebSocket clients
+        broadcastToClients({
+          type: 'cmms_work_order_created',
+          data: {
+            workOrder,
+            equipment,
+            anomaly: {
+              summary: insight.summary,
+              severity: insight.severity,
+              timestamp: insight.timestamp
+            }
+          }
+        });
+
+        return workOrder;
+      } catch (error) {
+        console.error(`🔧 Failed to create work order for ${equipment.enterprise}/${equipment.machine}:`, error.message);
+        return null;
+      }
+    });
+
+    const results = await Promise.allSettled(workOrderPromises);
+    const successful = results.filter(r => r.status === 'fulfilled' && r.value !== null).length;
+
+    console.log(`🔧 Created ${successful}/${affectedEquipment.length} work orders successfully`);
+
+  } catch (error) {
+    console.error('🔧 Error processing anomalies for work orders:', error.message);
+  }
+}
+
+/**
+ * Extracts affected equipment from trends and equipment state cache.
+ * Prioritizes equipment in DOWN or IDLE state for work order creation.
+ *
+ * @param {Array} trends - Trend data
+ * @param {Object} insight - Claude insight with enterprise-specific data
+ * @returns {Array<Object>} Array of equipment objects
+ */
+function extractAffectedEquipment(trends, insight) {
+  const equipment = new Map(); // Use Map to deduplicate by equipment key
+
+  // Extract unique equipment from trends
+  trends.forEach(trend => {
+    if (trend.enterprise && trend.site && trend.area) {
+      const key = `${trend.enterprise}/${trend.site}/${trend.area}`;
+
+      if (!equipment.has(key)) {
+        equipment.set(key, {
+          enterprise: trend.enterprise,
+          site: trend.site,
+          area: trend.area,
+          machine: trend.area, // Use area as machine identifier
+          stateName: 'UNKNOWN'
+        });
+      }
+    }
+  });
+
+  // Enrich with equipment state data if available
+  for (const [stateKey, stateData] of equipmentStateCache.states.entries()) {
+    const key = `${stateData.enterprise}/${stateData.site}/${stateData.machine}`;
+
+    if (equipment.has(key)) {
+      // Update existing equipment with state info
+      const eq = equipment.get(key);
+      eq.stateName = stateData.stateName;
+      eq.machine = stateData.machine;
+    } else if (insight.enterpriseInsights?.[stateData.enterprise]) {
+      // Add equipment from state cache if mentioned in enterprise insights
+      equipment.set(key, {
+        enterprise: stateData.enterprise,
+        site: stateData.site,
+        area: stateData.machine,
+        machine: stateData.machine,
+        stateName: stateData.stateName
+      });
+    }
+  }
+
+  // Convert to array and prioritize DOWN/IDLE equipment
+  const equipmentArray = Array.from(equipment.values());
+
+  // Sort by priority: DOWN > IDLE > others
+  equipmentArray.sort((a, b) => {
+    const priorityMap = { 'DOWN': 3, 'IDLE': 2, 'RUNNING': 1, 'UNKNOWN': 0 };
+    return (priorityMap[b.stateName] || 0) - (priorityMap[a.stateName] || 0);
+  });
+
+  // Limit to 5 work orders per analysis to avoid overwhelming maintenance team
+  return equipmentArray.slice(0, 5);
 }
 
 async function queryTrends() {
@@ -744,30 +1061,81 @@ async function queryTrends() {
   });
 }
 
+/**
+ * Builds domain-specific context for Claude based on enterprises present in trends.
+ * @param {Array} trends - Trend data with enterprise information
+ * @returns {string} Formatted domain context
+ */
+function buildDomainContext(trends) {
+  // Extract unique enterprises from trends
+  const enterprises = [...new Set(trends.map(t => t.enterprise))];
+
+  const contextSections = enterprises
+    .filter(ent => ENTERPRISE_DOMAIN_CONTEXT[ent])
+    .map(ent => {
+      const ctx = ENTERPRISE_DOMAIN_CONTEXT[ent];
+      const wasteInfo = ctx.wasteThresholds
+        ? `\n- Waste Thresholds: Warning > ${ctx.wasteThresholds.warning} ${ctx.wasteThresholds.unit}, Critical > ${ctx.wasteThresholds.critical} ${ctx.wasteThresholds.unit}`
+        : '';
+      return `
+**${ent} (${ctx.industry})**
+- Critical Metrics: ${ctx.criticalMetrics.join(', ')}
+- Key Concerns: ${ctx.concerns.join(', ')}
+- Safe Ranges: ${Object.entries(ctx.safeRanges).map(([k, v]) =>
+  `${k}: ${v.min ? `${v.min}-` : ''}${v.max || ''} ${v.unit || ''}${v.critical ? ' (CRITICAL)' : ''}`
+).join(', ')}${wasteInfo}`;
+    });
+
+  return contextSections.length > 0
+    ? `\n## Enterprise Domain Knowledge\n${contextSections.join('\n')}\n`
+    : '';
+}
+
 async function analyzeTreesWithClaude(trends) {
   // Summarize trends for Claude
   const trendSummary = summarizeTrends(trends);
+  const domainContext = buildDomainContext(trends);
+
+  // Build filter rules section if any filters are active
+  const filterRulesSection = factoryState.anomalyFilters.length > 0
+    ? `\n## User-Defined Anomaly Filter Rules
+
+Additionally, apply these user-defined rules when identifying anomalies:
+${factoryState.anomalyFilters.map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+
+These rules should modify your anomaly detection behavior accordingly.\n`
+    : '';
 
   const prompt = `You are an AI factory monitoring agent analyzing time-series trend data from a manufacturing facility.
-
+${domainContext}
 ## Current Trend Data (Last 5 Minutes, 1-Minute Aggregates)
 
 ${trendSummary}
-
+${filterRulesSection}
 ## Your Task
 
 Analyze these trends and provide:
 1. **Summary**: A 1-2 sentence overview of factory performance
 2. **Trends**: Key metrics that are rising, falling, or stable
 3. **Anomalies**: Any concerning patterns (sudden changes, values outside normal range)
-4. **Recommendations**: Actionable suggestions for operators
+4. **Waste Analysis**: Analyze waste/defect/reject metrics - flag any spikes above warning or critical thresholds
+5. **Recommendations**: Actionable suggestions for operators
+6. **Enterprise Insights**: Specific insights for each enterprise based on domain knowledge
+
+**IMPORTANT**: Pay special attention to metrics containing "waste", "defect", "reject", or "scrap". Rising waste trends indicate quality issues requiring immediate attention. Compare against the waste thresholds defined for each enterprise.
 
 Respond in JSON format:
 {
   "summary": "brief overview",
   "trends": [{"metric": "name", "direction": "rising|falling|stable", "change_percent": 0}],
   "anomalies": ["list of concerns"],
+  "wasteAlerts": [{"enterprise": "name", "metric": "name", "value": 0, "threshold": "warning|critical", "message": "description"}],
   "recommendations": ["list of actions"],
+  "enterpriseInsights": {
+    "Enterprise A": "glass manufacturing specific insight",
+    "Enterprise B": "beverage bottling specific insight",
+    "Enterprise C": "pharma bioprocessing specific insight"
+  },
   "severity": "low|medium|high",
   "confidence": 0.0-1.0
 }`;
@@ -1178,6 +1546,36 @@ function handleClientRequest(ws, request) {
         }));
       });
       break;
+
+    case 'update_anomaly_filter':
+      // SECURITY: Validate filters parameter
+      if (!request.filters || !Array.isArray(request.filters)) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Missing or invalid filters array' }));
+        return;
+      }
+
+      // SECURITY: Validate each filter is a string and not too long
+      const validFilters = request.filters.filter(filter => {
+        return typeof filter === 'string' && filter.length > 0 && filter.length <= 200;
+      });
+
+      // Limit number of filters
+      if (validFilters.length > 10) {
+        ws.send(JSON.stringify({ type: 'error', error: 'Too many filters (max 10)' }));
+        return;
+      }
+
+      // Update server state
+      factoryState.anomalyFilters = validFilters;
+
+      // Broadcast to all connected clients
+      broadcastToClients({
+        type: 'anomaly_filter_update',
+        data: { filters: factoryState.anomalyFilters }
+      });
+
+      console.log(`🔍 Anomaly filters updated: ${validFilters.length} active rules`);
+      break;
   }
 }
 
@@ -1441,6 +1839,568 @@ app.get('/api/schema/hierarchy', async (req, res) => {
       message: error.message
     });
   }
+});
+
+// NEW: Equipment states endpoint - returns current equipment states
+app.get('/api/equipment/states', async (req, res) => {
+  try {
+    const now = Date.now();
+    const states = [];
+    const summary = { running: 0, idle: 0, down: 0, unknown: 0 };
+
+    // Convert Map to array with calculated durations
+    for (const [key, stateData] of equipmentStateCache.states.entries()) {
+      const durationMs = now - new Date(stateData.firstSeen).getTime();
+
+      states.push({
+        enterprise: stateData.enterprise,
+        site: stateData.site,
+        machine: stateData.machine,
+        state: stateData.state,
+        stateName: stateData.stateName,
+        color: stateData.color,
+        reason: stateData.reason,
+        durationMs,
+        durationFormatted: formatDuration(durationMs),
+        lastUpdate: stateData.lastUpdate
+      });
+
+      // Update summary counts
+      const stateName = stateData.stateName.toLowerCase();
+      if (summary.hasOwnProperty(stateName)) {
+        summary[stateName]++;
+      } else {
+        summary.unknown++;
+      }
+    }
+
+    res.json({
+      states,
+      summary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Equipment states query error:', error);
+    res.status(500).json({
+      error: 'Failed to query equipment states',
+      message: error.message
+    });
+  }
+});
+
+// NEW: OEE lines endpoint - returns line-level OEE grouped by enterprise/site/area
+app.get('/api/oee/lines', async (req, res) => {
+  try {
+    // SECURITY: Validate enterprise parameter
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null) {
+      return res.status(400).json({ error: 'Invalid enterprise parameter' });
+    }
+
+    // Handle Enterprise C specially - it doesn't use OEE
+    if (enterprise === 'Enterprise C') {
+      return res.json({
+        lines: [],
+        message: 'Enterprise C (Bioprocessing) uses ISA-88 batch control metrics instead of OEE',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Build query with optional enterprise filter
+    const enterpriseFilter = (enterprise && enterprise !== 'ALL')
+      ? `|> filter(fn: (r) => r.enterprise == "${sanitizeInfluxIdentifier(enterprise)}")`
+      : '';
+
+    const fluxQuery = `
+      from(bucket: "${CONFIG.influxdb.bucket}")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) =>
+          r._measurement == "OEE_Performance" or
+          r._measurement == "OEE_Availability" or
+          r._measurement == "OEE_Quality" or
+          r._measurement == "metric_oee"
+        )
+        |> filter(fn: (r) => r._value > 0.1 and r._value <= 150)
+        ${enterpriseFilter}
+        |> group(columns: ["enterprise", "site", "area"])
+        |> mean()
+        |> yield(name: "mean_oee_by_line")
+    `;
+
+    const lines = [];
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (o._value !== undefined && o.enterprise && o.site) {
+            let oee = o._value;
+            // Normalize to percentage
+            if (oee > 0 && oee <= 1.5) {
+              oee = oee * 100;
+            }
+            oee = Math.min(100, Math.max(0, oee));
+
+            lines.push({
+              enterprise: o.enterprise,
+              site: o.site,
+              line: o.area || 'unknown',
+              oee: parseFloat(oee.toFixed(1)),
+              // Infer component values (would need separate queries for actual values)
+              availability: null,
+              performance: null,
+              quality: null,
+              tier: 1 // Assume tier 1 since we're using direct OEE measurements
+            });
+          }
+        },
+        error(error) {
+          console.error('OEE lines query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    res.json({
+      lines,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('OEE lines endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to query OEE lines',
+      message: error.message
+    });
+  }
+});
+
+// NEW: Waste/Defect tracking endpoint
+app.get('/api/waste/trends', async (req, res) => {
+  try {
+    const fluxQuery = `
+      from(bucket: "factory")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) =>
+          r._measurement == "OEE_Waste" or
+          r._measurement == "Production_DefectCHK" or
+          r._measurement == "Production_DefectDIM" or
+          r._measurement == "Production_DefectSED" or
+          r._measurement == "Production_RejectCount" or
+          r._measurement == "count_defect" or
+          r._measurement == "input_countdefect" or
+          r._measurement == "workorder_quantitydefect" or
+          r._measurement == "chrom_CHR01_WASTE_PV" or
+          r._measurement == "edge_reject_gate_status"
+        )
+        |> filter(fn: (r) => r._value >= 0)
+        |> group(columns: ["enterprise", "area", "_measurement"])
+        |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
+    `;
+
+    const trends = [];
+    const byEnterprise = {};
+    const byLine = {};
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (o._value !== undefined && o.enterprise && o._measurement) {
+            const line = o.area || 'Unknown Line';
+            const dataPoint = {
+              time: o._time,
+              enterprise: o.enterprise,
+              line: line,
+              value: parseFloat(o._value.toFixed(2)),
+              measurement: o._measurement
+            };
+            trends.push(dataPoint);
+
+            // Aggregate by enterprise for summary
+            if (!byEnterprise[o.enterprise]) {
+              byEnterprise[o.enterprise] = [];
+            }
+            byEnterprise[o.enterprise].push(o._value);
+
+            // Aggregate by line for bar chart
+            const lineKey = `${o.enterprise} - ${line}`;
+            if (!byLine[lineKey]) {
+              byLine[lineKey] = {
+                enterprise: o.enterprise,
+                line: line,
+                values: []
+              };
+            }
+            byLine[lineKey].values.push(o._value);
+          }
+        },
+        error(error) {
+          console.error('Waste trends query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    // Calculate summary statistics and trends
+    const summary = {};
+    for (const [enterprise, values] of Object.entries(byEnterprise)) {
+      const total = values.reduce((sum, v) => sum + v, 0);
+      const avg = values.length > 0 ? total / values.length : 0;
+
+      // Simple trend detection: compare first half vs second half
+      const midpoint = Math.floor(values.length / 2);
+      const firstHalf = values.slice(0, midpoint);
+      const secondHalf = values.slice(midpoint);
+      const firstAvg = firstHalf.length > 0 ? firstHalf.reduce((s, v) => s + v, 0) / firstHalf.length : 0;
+      const secondAvg = secondHalf.length > 0 ? secondHalf.reduce((s, v) => s + v, 0) / secondHalf.length : 0;
+
+      let trend = 'stable';
+      if (secondAvg > firstAvg * 1.1) trend = 'rising';
+      else if (secondAvg < firstAvg * 0.9) trend = 'falling';
+
+      summary[enterprise] = {
+        total: parseFloat(total.toFixed(2)),
+        avg: parseFloat(avg.toFixed(2)),
+        trend,
+        dataPoints: values.length
+      };
+    }
+
+    // Calculate by-line summary for bar chart
+    const linesSummary = Object.values(byLine).map(line => ({
+      enterprise: line.enterprise,
+      line: line.line,
+      total: parseFloat(line.values.reduce((sum, v) => sum + v, 0).toFixed(2)),
+      avg: parseFloat((line.values.reduce((sum, v) => sum + v, 0) / line.values.length).toFixed(2)),
+      dataPoints: line.values.length
+    })).sort((a, b) => b.total - a.total); // Sort by total waste descending
+
+    res.json({
+      trends,
+      summary,
+      linesSummary,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Waste trends endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to query waste trends',
+      message: error.message
+    });
+  }
+});
+
+// NEW: Waste by production line endpoint
+app.get('/api/waste/by-line', async (req, res) => {
+  try {
+    const fluxQuery = `
+      from(bucket: "factory")
+        |> range(start: -24h)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) =>
+          r._measurement == "OEE_Waste" or
+          r._measurement == "Production_DefectCHK" or
+          r._measurement == "Production_DefectDIM" or
+          r._measurement == "Production_DefectSED" or
+          r._measurement == "Production_RejectCount" or
+          r._measurement == "count_defect" or
+          r._measurement == "input_countdefect" or
+          r._measurement == "workorder_quantitydefect" or
+          r._measurement == "chrom_CHR01_WASTE_PV" or
+          r._measurement == "edge_reject_gate_status"
+        )
+        |> filter(fn: (r) => r._value >= 0)
+        |> group(columns: ["enterprise", "site", "area", "_measurement"])
+        |> sum()
+    `;
+
+    const lineData = new Map(); // Map<lineKey, lineInfo>
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (o._value !== undefined && o.enterprise && o.site && o.area && o._measurement) {
+            const lineKey = `${o.enterprise}|${o.site}|${o.area}`;
+
+            if (!lineData.has(lineKey)) {
+              lineData.set(lineKey, {
+                enterprise: o.enterprise,
+                site: o.site,
+                line: o.area,
+                area: o.area,
+                total: 0,
+                measurements: []
+              });
+            }
+
+            const line = lineData.get(lineKey);
+            line.total += o._value;
+            if (!line.measurements.includes(o._measurement)) {
+              line.measurements.push(o._measurement);
+            }
+          }
+        },
+        error(error) {
+          console.error('Waste by line query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    // Convert Map to array and sort by total descending (worst lines first)
+    const lines = Array.from(lineData.values())
+      .map(line => ({
+        ...line,
+        total: parseFloat(line.total.toFixed(2))
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    res.json({
+      lines,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Waste by line endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to query waste by line',
+
+// =============================================================================
+// CMMS INTEGRATION ENDPOINTS
+// =============================================================================
+
+/**
+ * GET /api/cmms/work-orders - List recent work orders from CMMS
+ * Query params:
+ *   - limit: Number of work orders to return (default: 10, max: 50)
+ */
+app.get('/api/cmms/work-orders', async (req, res) => {
+  try {
+    if (!cmmsProvider || !cmmsProvider.isEnabled()) {
+      return res.status(503).json({
+        error: 'CMMS integration is not enabled',
+        enabled: false
+      });
+    }
+
+    // Validate limit parameter
+    let limit = parseInt(req.query.limit) || 10;
+    if (isNaN(limit) || limit < 1) limit = 10;
+    if (limit > 50) limit = 50;
+
+    const workOrders = await cmmsProvider.listRecentWorkOrders(limit);
+
+    res.json({
+      provider: cmmsProvider.getProviderName(),
+      workOrders,
+      count: workOrders.length,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('CMMS work orders endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve work orders',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cmms/work-orders/:id - Get specific work order status
+ */
+app.get('/api/cmms/work-orders/:id', async (req, res) => {
+  try {
+    if (!cmmsProvider || !cmmsProvider.isEnabled()) {
+      return res.status(503).json({
+        error: 'CMMS integration is not enabled',
+        enabled: false
+      });
+    }
+
+    const workOrderId = req.params.id;
+    if (!workOrderId || typeof workOrderId !== 'string' || workOrderId.length > 100) {
+      return res.status(400).json({ error: 'Invalid work order ID' });
+    }
+    // Sanitize: only allow alphanumeric and common separators
+    if (!/^[a-zA-Z0-9_-]+$/.test(workOrderId)) {
+      return res.status(400).json({ error: 'Invalid work order ID format' });
+    }
+
+    const status = await cmmsProvider.getWorkOrderStatus(workOrderId);
+
+    res.json({
+      provider: cmmsProvider.getProviderName(),
+      workOrder: status,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('CMMS work order status endpoint error:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve work order status',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cmms/health - Check CMMS provider health
+ */
+app.get('/api/cmms/health', async (req, res) => {
+  if (!cmmsProvider) {
+    return res.json({
+      enabled: false,
+      healthy: false,
+      message: 'CMMS provider not configured'
+    });
+  }
+
+  try {
+    const health = await cmmsProvider.healthCheck();
+
+    res.json({
+      enabled: cmmsProvider.isEnabled(),
+      ...health,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      enabled: cmmsProvider.isEnabled(),
+      healthy: false,
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// NEW: Agent context endpoint - comprehensive data for agentic workflows
+// Uses Promise.allSettled() for resilience when InfluxDB or other services are unavailable
+app.get('/api/agent/context', async (req, res) => {
+  // Track data source availability
+  const dataSourceStatus = {
+    mqtt: mqttClient.connected,
+    influxdb: true // Assume true, will be set to false if queries fail
+  };
+
+  // Helper to extract result from Promise.allSettled
+  const extractResult = (result, defaultValue = null) => {
+    if (result.status === 'fulfilled') {
+      return { data: result.value, status: 'available' };
+    } else {
+      console.warn('Agent context partial failure:', result.reason?.message || result.reason);
+      dataSourceStatus.influxdb = false;
+      return { data: defaultValue, status: 'unavailable', error: result.reason?.message };
+    }
+  };
+
+  // Equipment states are in-memory, always available
+  const getEquipmentStates = () => {
+    const states = [];
+    const now = Date.now();
+    for (const [key, stateData] of equipmentStateCache.states.entries()) {
+      states.push({
+        ...stateData,
+        durationMs: now - new Date(stateData.firstSeen).getTime(),
+        durationFormatted: formatDuration(now - new Date(stateData.firstSeen).getTime())
+      });
+    }
+    return states;
+  };
+
+  // Recent insights are in-memory, always available
+  const getRecentInsights = () => factoryState.trendInsights.slice(-5);
+
+  // Gather all data in parallel using allSettled for resilience
+  const results = await Promise.allSettled([
+    // 0: Hierarchy (requires InfluxDB)
+    (async () => {
+      await refreshHierarchyCache();
+      return schemaCache.hierarchy;
+    })(),
+    // 1: Measurements (requires InfluxDB)
+    (async () => {
+      await refreshSchemaCache();
+      return Array.from(schemaCache.measurements.values());
+    })(),
+    // 2: OEE data (requires InfluxDB)
+    (async () => {
+      await discoverOEESchema();
+      const enterprises = Object.keys(oeeConfig.enterprises);
+      const results = await Promise.all(
+        enterprises.map(ent => calculateOEEv2(ent, null))
+      );
+      return results;
+    })(),
+    // 3: Trends (requires InfluxDB)
+    queryTrends()
+  ]);
+
+  // Extract results with fallbacks
+  const hierarchyResult = extractResult(results[0], null);
+  const measurementsResult = extractResult(results[1], []);
+  const oeeResult = extractResult(results[2], []);
+  const trendsResult = extractResult(results[3], []);
+
+  // Equipment states and insights are always available (in-memory)
+  const equipmentStates = getEquipmentStates();
+  const recentInsights = getRecentInsights();
+
+  // Build response with status indicators for each section
+  const response = {
+    timestamp: new Date().toISOString(),
+    factory: {
+      hierarchy: hierarchyResult.data,
+      measurements: measurementsResult.data ? {
+        list: measurementsResult.data,
+        count: measurementsResult.data.length
+      } : null,
+      status: hierarchyResult.status === 'available' && measurementsResult.status === 'available'
+        ? 'available' : 'unavailable'
+    },
+    equipment: {
+      states: equipmentStates,
+      summary: {
+        running: equipmentStates.filter(s => s.stateName === 'RUNNING').length,
+        idle: equipmentStates.filter(s => s.stateName === 'IDLE').length,
+        down: equipmentStates.filter(s => s.stateName === 'DOWN').length,
+        total: equipmentStates.length
+      },
+      status: 'available' // Always available (in-memory)
+    },
+    performance: {
+      oee: oeeResult.data,
+      status: oeeResult.status
+    },
+    trends: {
+      recent: trendsResult.data ? trendsResult.data.slice(0, 50) : null,
+      status: trendsResult.status
+    },
+    insights: {
+      recent: recentInsights,
+      status: 'available' // Always available (in-memory)
+    },
+    meta: {
+      enterprises: ENTERPRISE_DOMAIN_CONTEXT,
+      measurementClassifications: MEASUREMENT_CLASSIFICATIONS
+    },
+    dataSourceStatus
+  };
+
+  // Always return 200 with whatever data is available
+  res.json(response);
 });
 
 // NEW: Schema classifications endpoint - returns measurements grouped by classification
@@ -1747,7 +2707,8 @@ wss.on('connection', (ws) => {
       recentInsights: factoryState.trendInsights.slice(-5),
       recentAnomalies: factoryState.anomalies.slice(-10),
       stats: factoryState.stats,
-      insightsEnabled: !CONFIG.disableInsights
+      insightsEnabled: !CONFIG.disableInsights,
+      anomalyFilters: factoryState.anomalyFilters
     }
   }));
 
