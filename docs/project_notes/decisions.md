@@ -89,27 +89,51 @@ This file logs architectural decisions (ADRs) with context and trade-offs.
 
 ---
 
-### ADR-004: ChromaDB for Anomaly Persistence (2025-01)
+### ADR-004: ChromaDB for Anomaly Persistence (2026-01-14)
 
 **Context:**
-- AI detects anomalies that should be remembered
-- Need semantic search for similar past anomalies
-- Want RAG capabilities for contextual analysis
+- AI stores detected anomalies only in memory (`factoryState.trendInsights`)
+- Anomaly history lost on server restart
+- No way to query historical patterns or perform semantic search
+- Limited context window for AI deduplication
+- AWS AgentCore imminent - need storage strategy aligned with AgentCore Memory patterns
 
 **Decision:**
-- Use ChromaDB as vector database for anomaly embeddings
-- Store anomaly descriptions with metadata
+- Use ChromaDB as vector database for anomaly persistence with RAG capabilities
+- Generate embeddings using AWS Bedrock `titan-embed-text-v2` (already available)
+- Store anomaly text + embedding on detection
+- Retrieve similar anomalies for AI context enrichment
 
 **Alternatives Considered:**
-- SQLite -> Rejected: no semantic search
-- Pinecone -> Rejected: external service, cost, complexity
-- Redis with RediSearch -> Rejected: limited embedding support
+- SQLite -> Rejected: no semantic search, would require separate embedding store
+- InfluxDB anomaly storage -> Rejected: not designed for semantic queries
+- Hybrid SQLite + RAG -> Rejected: unnecessary complexity, two systems to maintain
+- In-memory only (status quo) -> Rejected: loses history on restart, no pattern learning
+- Pinecone -> Rejected: external managed service, cost, vendor lock-in
+
+**Rationale (from Quint FPF analysis):**
+1. **AgentCore Alignment**: AgentCore Memory uses semantic retrieval - building with vectors now means minimal refactoring when migrating. AgentCore Gateway supports MCP servers, ChromaDB can be exposed as MCP.
+2. **Evidence Quality**: Validated with internal testing (CL3) - confirmed Node 22 compatibility, minimal dependencies (only semver)
+3. **Embedding Reuse**: AWS Bedrock titan-embed-text-v2 already available - no additional embedding API costs
+4. **License**: Apache 2.0 - fully open source, commercial use permitted
+5. **Simplicity**: Pure JavaScript client, no native module compilation issues unlike SQLite
 
 **Consequences:**
-- Local-first, no external dependencies
-- Semantic search for similar anomalies
-- RAG pipeline for AI context enrichment
-- Additional storage and memory requirements
+- ✅ Semantic search for similar anomalies
+- ✅ RAG pipeline for AI context enrichment
+- ✅ Anomaly history persists across restarts
+- ✅ Ready for AWS AgentCore Memory migration
+- ⚠️ Adds new dependency and operational component (ChromaDB container)
+- ⚠️ Additional storage and memory requirements
+
+**Implementation:**
+1. Add `chromadb` dependency to package.json
+2. Create `lib/vector/index.js` for ChromaDB client
+3. Generate embeddings using Bedrock titan-embed-text-v2
+4. Store anomaly text + embedding on detection
+5. Retrieve similar anomalies for AI context enrichment
+
+**Revisit:** When AWS AgentCore Memory becomes GA (expected 2026)
 
 ---
 

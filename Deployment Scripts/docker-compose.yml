@@ -8,6 +8,20 @@
 #   - MQTT_PASSWORD
 
 services:
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - chromadb-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   influxdb:
     image: influxdb:2.7
     container_name: influxdb
@@ -45,10 +59,15 @@ services:
       - INFLUXDB_TOKEN=${INFLUXDB_ADMIN_TOKEN}
       - INFLUXDB_ORG=${INFLUXDB_ORG:-proveit}
       - INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-factory}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
     depends_on:
+      chromadb:
+        condition: service_healthy
       influxdb:
         condition: service_healthy
     restart: unless-stopped
 
 volumes:
+  chromadb-data:
   influxdb-data:

@@ -35,6 +35,27 @@ Project configuration, constants, and frequently-needed reference information.
 - **Bucket**: `factory`
 - **Token Location**: Environment variable `INFLUXDB_TOKEN` or hardcoded for dev
 
+### ChromaDB
+- **Local Port**: `8000`
+- **EC2 Container**: `chromadb` (image: `chromadb/chroma:latest`)
+- **EC2 Network**: `edgemind-net` (shared with backend and influxdb)
+- **EC2 Volume**: `chromadb-data:/data` (persistent)
+- **Health Check**: `GET /api/v2/heartbeat`
+- **Purpose**: Vector database for anomaly persistence and RAG
+- **Backend Env**: `CHROMA_HOST=chromadb` (container name, not localhost)
+
+#### EC2 ChromaDB Deployment Command
+```bash
+# With persistence and restart policy
+sudo docker run -d \
+  --name chromadb \
+  --network edgemind-net \
+  -p 8000:8000 \
+  -v chromadb-data:/data \
+  --restart unless-stopped \
+  chromadb/chroma
+```
+
 ---
 
 ## MQTT Configuration
@@ -84,9 +105,20 @@ Project configuration, constants, and frequently-needed reference information.
 
 ## Environment Variables
 
-- `ANTHROPIC_API_KEY` - Required for Claude AI analysis
+### Required
+- `INFLUXDB_ADMIN_PASSWORD` - InfluxDB admin password
+- `INFLUXDB_ADMIN_TOKEN` - InfluxDB API token
+- `MQTT_USERNAME` - MQTT broker username
+- `MQTT_PASSWORD` - MQTT broker password
+
+### Optional
 - `PORT` - HTTP server port (default: 3000)
+- `ANTHROPIC_API_KEY` - Direct Anthropic API (if not using Bedrock)
+- `AWS_REGION` - AWS region for Bedrock (default: us-east-1)
+- `AWS_PROFILE` - AWS profile for credentials
 - `DISABLE_INSIGHTS` - Set to 'true' to disable AI analysis loop
+- `CHROMA_HOST` - ChromaDB hostname (default: localhost, use 'chromadb' in Docker)
+- `CHROMA_PORT` - ChromaDB port (default: 8000)
 
 ---
 

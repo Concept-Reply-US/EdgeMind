@@ -14,9 +14,26 @@ cd "Deployment Scripts"
 This will:
 1. Check prerequisites (Docker, Docker Compose)
 2. Create `.env` from template if it doesn't exist (auto-generates InfluxDB credentials)
-3. Build and start the backend and InfluxDB containers
+3. Build and start the backend, InfluxDB, and ChromaDB containers
 4. Wait for services to be healthy
 5. Print access URLs
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│    ChromaDB     │     │    InfluxDB     │     │     Backend     │
+│  (Vector DB)    │     │  (Time Series)  │     │   (Node.js)     │
+│  Port: 8000     │     │  Port: 8086     │     │  Port: 3000     │
+└────────┬────────┘     └────────┬────────┘     └────────┬────────┘
+         │                       │                       │
+         └───────────────────────┴───────────────────────┘
+                        Docker Network
+```
+
+- **ChromaDB**: Vector database for anomaly persistence and semantic search (RAG)
+- **InfluxDB**: Time-series database for sensor data storage
+- **Backend**: Node.js server with MQTT ingestion, AI analysis, and WebSocket broadcast
 
 ### Prerequisites
 
@@ -92,5 +109,5 @@ See `/infra/` folder for AWS CDK deployment with:
 | `local-deploy.sh` | Idempotent local deployment script |
 | `docker-compose.local.yml` | Docker Compose for local dev |
 | `Dockerfile` | Backend container image |
-| `docker-compose.yml` | Legacy compose file |
+| `docker-compose.yml` | Production Docker Compose (InfluxDB + ChromaDB + Backend) |
 | `deploy-ec2.sh` | Legacy EC2 deployment |

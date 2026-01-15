@@ -14,7 +14,7 @@ This file tracks bugs encountered and their solutions for future reference.
 
 ## Entries
 
-### 2025-01-15 - Container Recreation Loses Files
+### 2026-01-15 - Container Recreation Loses Files
 - **Issue**: After running `docker-compose up --force-recreate` or `toggle-insights.sh`, the app crashes
 - **Root Cause**: `lib/`, `styles.css`, `app.js` are NOT bind-mounted - they're copied INTO the container and lost on recreation
 - **Solution**: Re-copy files using `docker cp`:
@@ -89,5 +89,20 @@ This file tracks bugs encountered and their solutions for future reference.
   }
   ```
 - **Prevention**: When adding new grid panels, ensure column spans are balanced (12-column grid)
+
+### 2026-01-15 - ChromaDB v2 API Migration
+- **Issue**: ChromaDB healthcheck returned `410 Gone` with message "The v1 API is deprecated"
+- **Root Cause**: ChromaDB upgraded from v1 to v2 API - the `/api/v1/heartbeat` endpoint was removed
+- **Solution**: Updated all healthcheck endpoints from `/api/v1/heartbeat` to `/api/v2/heartbeat`:
+  - `docker-compose.local.yml`
+  - `docker-compose.yml`
+  - `local-deploy.sh`
+- **Prevention**: Pin ChromaDB version in docker-compose or monitor ChromaDB release notes for breaking changes
+
+### 2026-01-15 - ChromaDB Volume Mount Path Changed
+- **Issue**: ChromaDB data not persisting despite volume mount
+- **Root Cause**: Older ChromaDB versions used `/chroma/chroma` for data, newer versions use `/data`
+- **Solution**: Updated volume mount from `-v chromadb-data:/chroma/chroma` to `-v chromadb-data:/data`
+- **Prevention**: Check ChromaDB logs for "Saving data to:" path when debugging persistence issues
 
 <!-- Add new bugs above this line -->

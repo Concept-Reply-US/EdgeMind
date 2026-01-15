@@ -3,18 +3,16 @@
 
 services:
   chromadb:
-    image: chromadb/chroma:0.4.24
+    image: chromadb/chroma:latest
     container_name: edgemind-chromadb
     ports:
       - "${CHROMA_PORT:-8000}:8000"
     environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/chroma
       - ANONYMIZED_TELEMETRY=FALSE
     volumes:
-      - chromadb-data:/chroma/chroma
+      - chromadb-data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,7 +59,8 @@ services:
       - INFLUXDB_ORG=${INFLUXDB_ORG:-proveit}
       - INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-factory}
       # ChromaDB Configuration (uses internal Docker network)
-      - CHROMA_URL=http://chromadb:8000
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=${CHROMA_PORT:-8000}
       # AI Configuration (AWS Bedrock)
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_PROFILE=${AWS_PROFILE:-default}

@@ -171,7 +171,7 @@ wait_for_services() {
     # Wait for ChromaDB
     echo -n "  ChromaDB: "
     while [ $attempt -lt $max_attempts ]; do
-        if curl -sf http://localhost:8000/api/v1/heartbeat > /dev/null 2>&1; then
+        if curl -sf http://localhost:8000/api/v2/heartbeat > /dev/null 2>&1; then
             echo -e "${GREEN}healthy${NC}"
             break
         fi
