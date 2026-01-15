@@ -5,6 +5,7 @@ from aws_cdk import (
     aws_cloudfront_origins as origins,
     aws_s3_deployment as s3_deployment,
     aws_elasticloadbalancingv2 as elbv2,
+    aws_iam as iam,
     CfnOutput,
     Duration,
     RemovalPolicy,
@@ -13,7 +14,11 @@ from constructs import Construct
 
 
 class FrontendStack(Stack):
-    """S3 bucket and CloudFront distribution for frontend static files."""
+    """S3 bucket and CloudFront distribution for frontend static files.
+
+    Uses Origin Access Control (OAC) instead of deprecated OAI for S3 access.
+    Includes WebSocket support with proper Sec-WebSocket-* header forwarding.
+    """
 
     def __init__(
         self,
@@ -42,15 +47,6 @@ class FrontendStack(Stack):
                 )
             ]
         )
-
-        # Origin Access Identity for CloudFront to access S3
-        origin_access_identity = cloudfront.OriginAccessIdentity(
-            self, "FrontendOAI",
-            comment=f"OAI for {project_name} frontend"
-        )
-
-        # Grant CloudFront read access to S3
-        self.frontend_bucket.grant_read(origin_access_identity)
 
         # Cache Policy for static assets (aggressive caching)
         static_cache_policy = cloudfront.CachePolicy(
@@ -86,76 +82,117 @@ class FrontendStack(Stack):
             query_string_behavior=cloudfront.CacheQueryStringBehavior.all(),
         )
 
-        # Origin Request Policy for WebSocket (forward all headers)
+        # Origin Request Policy for API (forward essential headers)
+        api_origin_request_policy = cloudfront.OriginRequestPolicy(
+            self, "APIOriginRequestPolicy",
+            origin_request_policy_name=f"{project_name}-{environment}-api",
+            comment="Forward essential headers for API requests",
+            cookie_behavior=cloudfront.OriginRequestCookieBehavior.all(),
+            header_behavior=cloudfront.OriginRequestHeaderBehavior.allow_list(
+                "Host",
+                "Origin",
+                "Accept",
+                "Accept-Language",
+                "Content-Type",
+            ),
+            query_string_behavior=cloudfront.OriginRequestQueryStringBehavior.all(),
+        )
+
+        # Origin Request Policy for WebSocket - forward Sec-WebSocket-* headers
+        # CRITICAL: These headers are required for WebSocket upgrade handshake
         websocket_origin_request_policy = cloudfront.OriginRequestPolicy(
             self, "WebSocketOriginRequestPolicy",
             origin_request_policy_name=f"{project_name}-{environment}-websocket",
-            comment="Forward all headers for WebSocket connections",
+            comment="Forward WebSocket headers for connection upgrade",
             cookie_behavior=cloudfront.OriginRequestCookieBehavior.all(),
-            header_behavior=cloudfront.OriginRequestHeaderBehavior.all(),
+            header_behavior=cloudfront.OriginRequestHeaderBehavior.allow_list(
+                # Required WebSocket headers - CloudFront auto-handles Connection/Upgrade
+                "Sec-WebSocket-Key",
+                "Sec-WebSocket-Version",
+                "Sec-WebSocket-Protocol",
+                "Sec-WebSocket-Accept",
+                "Sec-WebSocket-Extensions",
+                # Standard headers (Connection/Upgrade are hop-by-hop, handled by CloudFront)
+                "Origin",
+            ),
             query_string_behavior=cloudfront.OriginRequestQueryStringBehavior.all(),
+        )
+
+        # CloudFront logs bucket (must be created before distribution)
+        log_bucket = s3.Bucket(
+            self, "CloudFrontLogBucket",
+            bucket_name=f"{project_name}-{environment}-cloudfront-logs",
+            encryption=s3.BucketEncryption.S3_MANAGED,
+            block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            removal_policy=RemovalPolicy.DESTROY,
+            auto_delete_objects=True,
+            object_ownership=s3.ObjectOwnership.BUCKET_OWNER_PREFERRED,
+            lifecycle_rules=[
+                s3.LifecycleRule(
+                    enabled=True,
+                    expiration=Duration.days(90)
+                )
+            ]
+        )
+
+        # S3 Origin with Origin Access Control (OAC) - replacing deprecated OAI
+        s3_origin = origins.S3BucketOrigin.with_origin_access_control(
+            self.frontend_bucket,
+            origin_access_levels=[cloudfront.AccessLevel.READ],
+        )
+
+        # ALB Origin for backend API and WebSocket
+        alb_origin = origins.LoadBalancerV2Origin(
+            alb,
+            protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+            http_port=80,
+            connection_attempts=3,
+            connection_timeout=Duration.seconds(10),
+            read_timeout=Duration.seconds(60),  # Increased for WebSocket
         )
 
         # CloudFront Distribution
         self.distribution = cloudfront.Distribution(
             self, "FrontendDistribution",
             comment=f"{project_name} {environment} frontend distribution",
-            default_root_object="factory-live.html",
+            default_root_object="index.html",
             default_behavior=cloudfront.BehaviorOptions(
-                origin=origins.S3Origin(
-                    bucket=self.frontend_bucket,
-                    origin_access_identity=origin_access_identity
-                ),
+                origin=s3_origin,
                 viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
                 cache_policy=static_cache_policy,
                 allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
                 compress=True,
             ),
             additional_behaviors={
+                # WebSocket connections - CRITICAL: Must forward Sec-WebSocket-* headers
+                "/ws/*": cloudfront.BehaviorOptions(
+                    origin=alb_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=websocket_origin_request_policy,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    compress=False,
+                ),
                 # API requests go to ALB (no caching)
                 "/api/*": cloudfront.BehaviorOptions(
-                    origin=origins.LoadBalancerV2Origin(
-                        alb,
-                        protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-                        http_port=80,
-                        connection_attempts=3,
-                        connection_timeout=Duration.seconds(10),
-                        read_timeout=Duration.seconds(30),
-                    ),
+                    origin=alb_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-                    cache_policy=api_cache_policy,
-                    origin_request_policy=websocket_origin_request_policy,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=api_origin_request_policy,
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
                     compress=False,
                 ),
                 # Health check endpoint
                 "/health": cloudfront.BehaviorOptions(
-                    origin=origins.LoadBalancerV2Origin(
-                        alb,
-                        protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
-                        http_port=80,
-                    ),
+                    origin=alb_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.ALLOW_ALL,
-                    cache_policy=api_cache_policy,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
                     allowed_methods=cloudfront.AllowedMethods.ALLOW_GET_HEAD,
                 ),
             },
             price_class=cloudfront.PriceClass.PRICE_CLASS_100,  # US, Canada, Europe only
             enable_logging=True,
-            log_bucket=s3.Bucket(
-                self, "CloudFrontLogBucket",
-                bucket_name=f"{project_name}-{environment}-cloudfront-logs",
-                encryption=s3.BucketEncryption.S3_MANAGED,
-                block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
-                removal_policy=RemovalPolicy.DESTROY,
-                auto_delete_objects=True,
-                lifecycle_rules=[
-                    s3.LifecycleRule(
-                        enabled=True,
-                        expiration=Duration.days(90)
-                    )
-                ]
-            ),
+            log_bucket=log_bucket,
             log_file_prefix="cloudfront/",
         )
 

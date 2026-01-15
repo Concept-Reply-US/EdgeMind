@@ -86,7 +86,23 @@ class NetworkStack(Stack):
             description="Allow InfluxDB from backend"
         )
 
-        # Security Group for EFS (used by InfluxDB for persistence)
+        # Security Group for ChromaDB ECS tasks
+        self.chromadb_security_group = ec2.SecurityGroup(
+            self, "ChromaDBSecurityGroup",
+            vpc=self.vpc,
+            security_group_name=f"{project_name}-{environment}-chromadb-sg",
+            description="Security group for ChromaDB ECS tasks",
+            allow_all_outbound=True,
+        )
+
+        # Allow traffic from backend to ChromaDB on port 8000
+        self.chromadb_security_group.add_ingress_rule(
+            peer=self.backend_security_group,
+            connection=ec2.Port.tcp(8000),
+            description="Allow ChromaDB from backend"
+        )
+
+        # Security Group for EFS (used by InfluxDB and ChromaDB for persistence)
         self.efs_security_group = ec2.SecurityGroup(
             self, "EFSSecurityGroup",
             vpc=self.vpc,
@@ -100,6 +116,13 @@ class NetworkStack(Stack):
             peer=self.influxdb_security_group,
             connection=ec2.Port.tcp(2049),
             description="Allow NFS from InfluxDB tasks"
+        )
+
+        # Allow NFS from ChromaDB tasks
+        self.efs_security_group.add_ingress_rule(
+            peer=self.chromadb_security_group,
+            connection=ec2.Port.tcp(2049),
+            description="Allow NFS from ChromaDB tasks"
         )
 
         # Outputs
@@ -129,4 +152,11 @@ class NetworkStack(Stack):
             value=self.influxdb_security_group.security_group_id,
             description="InfluxDB Security Group ID",
             export_name=f"{project_name}-{environment}-influxdb-sg-id"
+        )
+
+        CfnOutput(
+            self, "ChromaDBSecurityGroupId",
+            value=self.chromadb_security_group.security_group_id,
+            description="ChromaDB Security Group ID",
+            export_name=f"{project_name}-{environment}-chromadb-sg-id"
         )

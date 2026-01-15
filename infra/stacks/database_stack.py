@@ -14,7 +14,12 @@ from constructs import Construct
 
 
 class DatabaseStack(Stack):
-    """InfluxDB on ECS Fargate with EFS for persistence."""
+    """InfluxDB and ChromaDB on ECS Fargate with EFS for persistence.
+
+    Services:
+    - InfluxDB 2.7: Time-series database for factory metrics
+    - ChromaDB: Vector database for anomaly persistence and RAG
+    """
 
     def __init__(
         self,
@@ -24,6 +29,7 @@ class DatabaseStack(Stack):
         ecs_cluster: ecs.ICluster,
         influxdb_security_group: ec2.ISecurityGroup,
         efs_security_group: ec2.ISecurityGroup,
+        chromadb_security_group: ec2.ISecurityGroup,
         influxdb_secret: secretsmanager.ISecret,
         project_name: str = "edgemind",
         environment: str = "prod",
@@ -165,6 +171,8 @@ class DatabaseStack(Stack):
             task_definition=task_definition,
             service_name=f"{project_name}-{environment}-influxdb",
             desired_count=1,
+            min_healthy_percent=100,  # Keep existing task running during deploy
+            max_healthy_percent=200,  # Allow new task to start before stopping old
             security_groups=[influxdb_security_group],
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PUBLIC  # Default VPC only has public subnets
@@ -182,7 +190,7 @@ class DatabaseStack(Stack):
             enable_execute_command=True,  # For debugging
         )
 
-        # Outputs
+        # InfluxDB Outputs
         CfnOutput(
             self, "InfluxDBServiceName",
             value=self.service.service_name,
@@ -199,4 +207,140 @@ class DatabaseStack(Stack):
             self, "InfluxDBInternalURL",
             value="http://influxdb.edgemind.local:8086",
             description="InfluxDB internal URL via Cloud Map"
+        )
+
+        # ==========================================================================
+        # ChromaDB - Vector Database for Anomaly Persistence and RAG
+        # ==========================================================================
+
+        # EFS Access Point for ChromaDB (separate from InfluxDB)
+        chromadb_access_point = self.file_system.add_access_point(
+            "ChromaDBAccessPoint",
+            path="/chromadb",
+            create_acl=efs.Acl(
+                owner_uid="1000",
+                owner_gid="1000",
+                permissions="755"
+            ),
+            posix_user=efs.PosixUser(
+                uid="1000",
+                gid="1000"
+            )
+        )
+
+        # Task Definition for ChromaDB
+        chromadb_task_definition = ecs.FargateTaskDefinition(
+            self, "ChromaDBTaskDef",
+            family=f"{project_name}-{environment}-chromadb",
+            cpu=256,  # 0.25 vCPU - ChromaDB is lightweight
+            memory_limit_mib=512,  # 512 MB
+            runtime_platform=ecs.RuntimePlatform(
+                cpu_architecture=ecs.CpuArchitecture.X86_64,
+                operating_system_family=ecs.OperatingSystemFamily.LINUX
+            )
+        )
+
+        # Add EFS volume to ChromaDB task definition
+        chromadb_task_definition.add_volume(
+            name="chromadb-data",
+            efs_volume_configuration=ecs.EfsVolumeConfiguration(
+                file_system_id=self.file_system.file_system_id,
+                transit_encryption="ENABLED",
+                authorization_config=ecs.AuthorizationConfig(
+                    access_point_id=chromadb_access_point.access_point_id,
+                    iam="ENABLED"
+                )
+            )
+        )
+
+        # Grant ChromaDB task access to EFS
+        self.file_system.grant_root_access(chromadb_task_definition.task_role.grant_principal)
+
+        # CloudWatch Logs for ChromaDB
+        chromadb_log_group = logs.LogGroup(
+            self, "ChromaDBLogGroup",
+            log_group_name=f"/ecs/{project_name}-{environment}-chromadb",
+            retention=logs.RetentionDays.ONE_MONTH,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+
+        # ChromaDB container
+        chromadb_container = chromadb_task_definition.add_container(
+            "chromadb",
+            image=ecs.ContainerImage.from_registry("chromadb/chroma:latest"),
+            logging=ecs.LogDriver.aws_logs(
+                stream_prefix="chromadb",
+                log_group=chromadb_log_group
+            ),
+            environment={
+                "IS_PERSISTENT": "TRUE",
+                "PERSIST_DIRECTORY": "/chroma/chroma",
+                "ANONYMIZED_TELEMETRY": "FALSE",
+            },
+            # Health check using bash TCP check - chromadb/chroma image lacks curl/wget
+            # but has bash with /dev/tcp support
+            health_check=ecs.HealthCheck(
+                command=["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"],
+                interval=Duration.seconds(30),
+                timeout=Duration.seconds(5),
+                retries=3,
+                start_period=Duration.seconds(60)
+            )
+        )
+
+        # Add port mapping for ChromaDB
+        chromadb_container.add_port_mappings(
+            ecs.PortMapping(
+                container_port=8000,
+                protocol=ecs.Protocol.TCP,
+                name="chromadb"
+            )
+        )
+
+        # Mount EFS volume for ChromaDB persistence
+        chromadb_container.add_mount_points(
+            ecs.MountPoint(
+                container_path="/chroma/chroma",
+                source_volume="chromadb-data",
+                read_only=False
+            )
+        )
+
+        # ChromaDB ECS Fargate Service
+        self.chromadb_service = ecs.FargateService(
+            self, "ChromaDBService",
+            cluster=ecs_cluster,
+            task_definition=chromadb_task_definition,
+            service_name=f"{project_name}-{environment}-chromadb",
+            desired_count=1,
+            min_healthy_percent=100,  # Keep existing task running during deploy
+            max_healthy_percent=200,  # Allow new task to start before stopping old
+            security_groups=[chromadb_security_group],
+            vpc_subnets=ec2.SubnetSelection(
+                subnet_type=ec2.SubnetType.PUBLIC
+            ),
+            assign_public_ip=True,
+            cloud_map_options=ecs.CloudMapOptions(
+                name="chromadb",
+                cloud_map_namespace=namespace,
+                dns_record_type=servicediscovery.DnsRecordType.A,
+                dns_ttl=Duration.seconds(10)
+            ),
+            circuit_breaker=ecs.DeploymentCircuitBreaker(
+                rollback=True
+            ),
+            enable_execute_command=True,
+        )
+
+        # ChromaDB Outputs
+        CfnOutput(
+            self, "ChromaDBServiceName",
+            value=self.chromadb_service.service_name,
+            description="ChromaDB ECS Service Name"
+        )
+
+        CfnOutput(
+            self, "ChromaDBInternalURL",
+            value="http://chromadb.edgemind.local:8000",
+            description="ChromaDB internal URL via Cloud Map"
         )

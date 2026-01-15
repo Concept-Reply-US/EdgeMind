@@ -159,4 +159,96 @@ This file logs architectural decisions (ADRs) with context and trade-offs.
 - Additional dependency (sparkplug-payload)
 - Need to install in container after recreation
 
+### ADR-006: Hybrid ECS + S3/CloudFront Deployment (2026-01-15)
+
+**Context:**
+- EC2-based deployment caused friction: manual `scp` + `docker cp` commands
+- Container recreation loses files (lib/, styles.css, app.js)
+- Complex recovery steps documented in CLAUDE.md
+- Goal: frictionless deployment while maintaining WebSocket/MQTT architecture
+
+**Decision:**
+- Static frontend (index.html, styles.css, app.js) on **S3 + CloudFront**
+- Backend (server.js, lib/) on **ECS Fargate** behind ALB
+- Infrastructure defined using **AWS CDK with Python (latest version)**
+- CloudFront behaviors: `/` → S3, `/ws/*` → Backend ALB
+
+**Alternatives Considered:**
+- Full Fargate (everything in containers) → Rejected: 2-3x cost increase without proportional benefit, no frontend/backend separation advantage
+- ECS EC2 with Immutable AMI → Rejected: trades docker cp pain for AMI management pain, operational overhead exceeds cost savings (~$15/mo)
+- CI/CD on existing EC2 → Rejected: automates broken process, doesn't fix root cause (bind mounts + docker cp)
+
+**Rationale (from Quint FPF analysis):**
+1. **Highest R_eff (0.90)**: Best evidence quality among candidates
+2. **AWS Endorsed**: AWS Prescriptive Guidance explicitly recommends this pattern for SPAs
+3. **Friction Elimination**: Frontend deploys = `aws s3 sync` (seconds), Backend = ECR push
+4. **Immutable Containers**: No more docker cp - everything baked into image
+5. **Independent Deploys**: Can update frontend without touching backend
+
+**Consequences:**
+- ✅ Frontend deploys become trivial (`aws s3 sync`)
+- ✅ Backend deploys are immutable container pushes
+- ✅ Clear separation enables independent deploy cycles
+- ✅ Python CDK for type-safe infrastructure
+- ⚠️ Two deployment pipelines to maintain (but each is simple)
+- ⚠️ Need CORS headers on backend for cross-origin WebSocket
+- ⚠️ Need dedicated backend subdomain (e.g., api.edgemind.com)
+
+**Implementation:**
+1. Create CDK stack: S3 bucket, CloudFront distribution, ECS Fargate service, ALB
+2. Update Dockerfile to include ALL files (no bind mounts)
+3. Configure CloudFront behaviors for path-based routing
+4. Configure CORS on backend for cross-origin WebSocket
+5. Set up CI/CD: S3 sync for frontend, ECR push for backend
+
+**DRR Reference:** `.quint/decisions/DRR-2026-01-15-hybrid-ecs-backend-s3-cloudfront-frontend-deployment.md`
+
+**Revisit:** If monthly cost exceeds $100 or WebSocket latency issues arise
+
+---
+
+### ADR-007: GitHub Actions for CI/CD (2026-01-15)
+
+**Context:**
+- Need automated deployment pipeline for hybrid ECS + S3/CloudFront architecture
+- Must handle frontend deploys to S3, backend builds to ECR, ECS service updates
+- Evaluated AWS CodePipeline vs GitHub Actions
+
+**Decision:**
+- Use **GitHub Actions** with OIDC federation for AWS credentials
+- Two workflows: `deploy-frontend.yml` and `deploy-backend.yml`
+- Path-based triggers for efficient deployments
+
+**Alternatives Considered:**
+- AWS CodePipeline + CodeBuild → Rejected: Higher complexity (5+ resources vs 1 YAML), overkill for single-developer project, $5-10/mo cost vs free tier
+
+**Rationale (from Quint FPF analysis):**
+1. **Higher R_eff (0.88)** vs CodePipeline (0.75)
+2. **Simpler setup**: Single YAML file vs 5+ AWS resources
+3. **Free tier**: 2000 minutes/month sufficient
+4. **OIDC federation**: No long-lived AWS credentials to manage
+5. **Faster iteration**: Edit YAML, push, done
+
+**Consequences:**
+- ✅ Simple, fast deployments
+- ✅ No credential management (OIDC)
+- ✅ Free for this usage level
+- ⚠️ Not defined in CDK (separate from infrastructure)
+- ⚠️ Rolling deploys only (no native blue/green)
+
+**Implementation:**
+- `.github/workflows/deploy-frontend.yml` - triggers on index.html, styles.css, app.js changes
+- `.github/workflows/deploy-backend.yml` - triggers on server.js, lib/, Dockerfile changes
+- OIDC provider must be configured in AWS IAM (see docs/deployment/github-oidc-setup.md)
+
+**Required Secrets:**
+- `AWS_ROLE_ARN` - IAM role ARN for GitHub Actions
+- `CLOUDFRONT_DISTRIBUTION_ID` - CloudFront distribution ID
+
+**DRR Reference:** `.quint/decisions/DRR-2026-01-15-github-actions-for-ci-cd.md`
+
+**Revisit:** If blue/green deployments become necessary
+
+---
+
 <!-- Add new decisions above this line -->

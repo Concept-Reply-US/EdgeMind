@@ -16,7 +16,29 @@ Project configuration, constants, and frequently-needed reference information.
 
 ## Infrastructure
 
-### EC2 Production Server
+### NEW: Hybrid ECS + S3/CloudFront Architecture (ADR-006)
+- **Frontend**: S3 + CloudFront (static files)
+- **Backend**: ECS Fargate behind ALB
+- **IaC**: AWS CDK Python (`/infra/` directory)
+- **CI/CD**: GitHub Actions (`.github/workflows/`)
+- **AWS Profile**: `reply`
+
+#### CDK Stacks
+| Stack | Purpose |
+|-------|---------|
+| `edgemind-prod-network` | VPC, security groups |
+| `edgemind-prod-secrets` | MQTT, InfluxDB secrets |
+| `edgemind-prod-database` | InfluxDB + ChromaDB on Fargate |
+| `edgemind-prod-backend` | Node.js backend + ALB |
+| `edgemind-prod-frontend` | S3 + CloudFront |
+
+#### Deploy Commands
+```bash
+cd infra && source .venv/bin/activate
+cdk deploy --all --profile reply
+```
+
+### LEGACY: EC2 Production Server (being replaced)
 - **Host**: `174.129.90.76`
 - **SSH Key**: `~/.ssh/edgemind-demo.pem`
 - **SSH Command**: `ssh -i ~/.ssh/edgemind-demo.pem ec2-user@174.129.90.76`
@@ -58,9 +80,34 @@ COPY app.js ./
 - **EC2 Container**: `chromadb` (image: `chromadb/chroma:latest`)
 - **EC2 Network**: `edgemind-net` (shared with backend and influxdb)
 - **EC2 Volume**: `chromadb-data:/data` (persistent)
-- **Health Check**: `GET /api/v2/heartbeat`
+- **API Endpoint**: `GET /api/v2/heartbeat`
 - **Purpose**: Vector database for anomaly persistence and RAG
 - **Backend Env**: `CHROMA_HOST=chromadb` (container name, not localhost)
+
+#### ⚠️ ChromaDB Health Check Pattern (IMPORTANT)
+The `chromadb/chroma` image does NOT have `curl`, `wget`, or `python` in PATH. Use bash TCP check:
+```bash
+# Works in: docker-compose, EC2, ECS Fargate - ALL environments
+bash -c 'echo > /dev/tcp/localhost/8000'
+```
+**CDK (ECS):**
+```python
+health_check=ecs.HealthCheck(
+    command=["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"],
+    interval=Duration.seconds(30),
+    timeout=Duration.seconds(5),
+    retries=3,
+    start_period=Duration.seconds(60)
+)
+```
+**docker-compose:**
+```yaml
+healthcheck:
+  test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+```
 
 #### EC2 ChromaDB Deployment Command
 ```bash
@@ -131,12 +178,18 @@ sudo docker run -d \
 
 ### Optional
 - `PORT` - HTTP server port (default: 3000)
-- `ANTHROPIC_API_KEY` - Direct Anthropic API (if not using Bedrock)
 - `AWS_REGION` - AWS region for Bedrock (default: us-east-1)
 - `AWS_PROFILE` - AWS profile for credentials
 - `DISABLE_INSIGHTS` - Set to 'true' to disable AI analysis loop
 - `CHROMA_HOST` - ChromaDB hostname (default: localhost, use 'chromadb' in Docker)
 - `CHROMA_PORT` - ChromaDB port (default: 8000)
+
+### AI Configuration (IMPORTANT)
+- **Uses AWS Bedrock** - NOT direct Anthropic API
+- **No ANTHROPIC_API_KEY needed** - Uses IAM role permissions
+- Backend uses `@aws-sdk/client-bedrock-runtime` which authenticates via IAM
+- Task role needs `bedrock:InvokeModel` permission on `anthropic.claude-*` models
+- Model ID configured in `lib/config.js` (e.g., `anthropic.claude-3-5-sonnet-20241022-v2:0`)
 
 ---
 

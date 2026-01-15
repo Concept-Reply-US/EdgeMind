@@ -10,11 +10,12 @@ import json
 
 
 class SecretsStack(Stack):
-    """Secrets Manager secrets for MQTT and InfluxDB credentials.
+    """Secrets Manager secrets for MQTT, InfluxDB, and AI credentials.
 
     SECURITY NOTES:
     - MQTT password must be updated after deployment via AWS Console or update-secrets.sh
     - InfluxDB token is auto-generated using Secrets Manager
+    - Anthropic API key must be updated after deployment (optional - can use Bedrock instead)
     - Secrets are retained on stack deletion to prevent data loss
     """
 
@@ -40,6 +41,19 @@ class SecretsStack(Stack):
                 "port": SecretValue.unsafe_plain_text("1883"),
                 "username": SecretValue.unsafe_plain_text("UPDATE_USERNAME"),
                 "password": SecretValue.unsafe_plain_text("UPDATE_PASSWORD"),
+            },
+            removal_policy=RemovalPolicy.RETAIN,
+        )
+
+        # Anthropic API key secret (optional - can use Bedrock instead)
+        # NOTE: Key must be updated after deployment if using direct Anthropic API
+        # If using AWS Bedrock, this secret is not needed
+        self.anthropic_secret = secretsmanager.Secret(
+            self, "AnthropicSecret",
+            secret_name=f"{project_name}/anthropic",
+            description="Anthropic API key - UPDATE AFTER DEPLOYMENT (optional if using Bedrock)",
+            secret_object_value={
+                "api_key": SecretValue.unsafe_plain_text("UPDATE_ANTHROPIC_API_KEY"),
             },
             removal_policy=RemovalPolicy.RETAIN,
         )
@@ -78,6 +92,13 @@ class SecretsStack(Stack):
             export_name=f"{project_name}-{environment}-influxdb-secret-arn"
         )
 
+        CfnOutput(
+            self, "AnthropicSecretArn",
+            value=self.anthropic_secret.secret_arn,
+            description="ARN of Anthropic API key secret",
+            export_name=f"{project_name}-{environment}-anthropic-secret-arn"
+        )
+
         # Export secret names for easy reference
         CfnOutput(
             self, "MQTTSecretName",
@@ -89,4 +110,10 @@ class SecretsStack(Stack):
             self, "InfluxDBSecretName",
             value=self.influxdb_secret.secret_name,
             description="Name of InfluxDB credentials secret"
+        )
+
+        CfnOutput(
+            self, "AnthropicSecretName",
+            value=self.anthropic_secret.secret_name,
+            description="Name of Anthropic API key secret"
         )

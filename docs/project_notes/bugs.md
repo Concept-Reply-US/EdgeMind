@@ -126,4 +126,19 @@ This file tracks bugs encountered and their solutions for future reference.
   ```
 - **Prevention**: When modularizing code into new folders, always update Dockerfile to include them. Run `docker exec <container> ls -la` to verify all expected files are present.
 
+### 2026-01-15 - ECS ChromaDB Health Check Fails (No Curl in Container)
+- **Issue**: ChromaDB ECS Fargate service failed to deploy with "ECS Deployment Circuit Breaker was triggered"
+- **Root Cause**: CDK health check used `curl -f http://localhost:8000/api/v2/heartbeat` but `chromadb/chroma` Docker image doesn't have curl installed. Python urllib also failed.
+- **Solution**: Use bash TCP check (same solution as local Docker):
+  ```python
+  health_check=ecs.HealthCheck(
+      command=["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"],
+      interval=Duration.seconds(30),
+      timeout=Duration.seconds(5),
+      retries=3,
+      start_period=Duration.seconds(60)
+  )
+  ```
+- **Prevention**: When writing ECS health checks, verify what binaries are available in the container image. For containers with bash, use TCP checks via `/dev/tcp/`. This is the same solution used in docker-compose.
+
 <!-- Add new bugs above this line -->

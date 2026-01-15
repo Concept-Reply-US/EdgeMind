@@ -63,21 +63,22 @@ cluster = ecs.Cluster(
     network_stack, "EdgeMindCluster",
     cluster_name=f"{PROJECT_NAME}-{ENVIRONMENT}-cluster",
     vpc=network_stack.vpc,
-    container_insights=True,
+    container_insights_v2=ecs.ContainerInsights.ENABLED,
 )
 
-# Stack 3: Database (InfluxDB on ECS Fargate with EFS)
+# Stack 3: Database (InfluxDB + ChromaDB on ECS Fargate with EFS)
 database_stack = DatabaseStack(
     app, f"{PROJECT_NAME}-{ENVIRONMENT}-database",
     vpc=network_stack.vpc,
     ecs_cluster=cluster,
     influxdb_security_group=network_stack.influxdb_security_group,
+    chromadb_security_group=network_stack.chromadb_security_group,
     efs_security_group=network_stack.efs_security_group,
     influxdb_secret=secrets_stack.influxdb_secret,
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
     env=env,
-    description="InfluxDB time-series database on ECS Fargate with EFS persistence"
+    description="InfluxDB and ChromaDB on ECS Fargate with EFS persistence"
 )
 database_stack.add_dependency(network_stack)
 database_stack.add_dependency(secrets_stack)

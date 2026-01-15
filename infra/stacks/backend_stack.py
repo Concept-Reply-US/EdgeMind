@@ -15,7 +15,14 @@ from constructs import Construct
 
 
 class BackendStack(Stack):
-    """Node.js backend on ECS Fargate with ALB and ECR repository."""
+    """Node.js backend on ECS Fargate with ALB and ECR repository.
+
+    The backend connects to:
+    - MQTT broker for factory data ingestion
+    - InfluxDB for time-series storage
+    - ChromaDB for anomaly persistence
+    - Claude AI (via Bedrock or direct API) for analysis
+    """
 
     def __init__(
         self,
@@ -147,6 +154,9 @@ class BackendStack(Stack):
                 "PORT": "3000",
                 "NODE_ENV": "production",
                 "AWS_REGION": self.region,
+                # ChromaDB service discovery URL (via Cloud Map)
+                "CHROMA_HOST": "chromadb.edgemind.local",
+                "CHROMA_PORT": "8000",
             },
             secrets={
                 # MQTT credentials from Secrets Manager
@@ -158,6 +168,7 @@ class BackendStack(Stack):
                 "INFLUXDB_TOKEN": ecs.Secret.from_secrets_manager(influxdb_secret, "token"),
                 "INFLUXDB_ORG": ecs.Secret.from_secrets_manager(influxdb_secret, "org"),
                 "INFLUXDB_BUCKET": ecs.Secret.from_secrets_manager(influxdb_secret, "bucket"),
+                # Note: AI uses AWS Bedrock via IAM role - no API key needed
             },
             health_check=ecs.HealthCheck(
                 command=["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"],
@@ -184,6 +195,8 @@ class BackendStack(Stack):
             task_definition=task_definition,
             service_name=f"{project_name}-{environment}-backend",
             desired_count=2,  # Run 2 instances for HA
+            min_healthy_percent=100,  # Keep existing tasks running during deploy
+            max_healthy_percent=200,  # Allow new tasks to start before stopping old
             security_groups=[backend_security_group],
             vpc_subnets=ec2.SubnetSelection(
                 subnet_type=ec2.SubnetType.PUBLIC  # Default VPC only has public subnets
