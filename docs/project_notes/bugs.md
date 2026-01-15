@@ -105,4 +105,25 @@ This file tracks bugs encountered and their solutions for future reference.
 - **Solution**: Updated volume mount from `-v chromadb-data:/chroma/chroma` to `-v chromadb-data:/data`
 - **Prevention**: Check ChromaDB logs for "Saving data to:" path when debugging persistence issues
 
+### 2026-01-15 - ChromaDB Healthcheck Curl Not Available
+- **Issue**: Docker healthcheck failed with "curl: executable file not found in $PATH"
+- **Root Cause**: ChromaDB container image doesn't include curl, wget, or python in PATH
+- **Solution**: Changed healthcheck from curl to bash TCP check:
+  ```yaml
+  healthcheck:
+    test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8000'"]
+  ```
+- **Prevention**: Always verify what binaries are available in container images before writing healthchecks. Use `docker exec <container> ls /bin /usr/bin` to check.
+
+### 2026-01-15 - Dockerfile Missing lib/ Folder
+- **Issue**: Backend container crashed with "Cannot find module './lib/influx/client'"
+- **Root Cause**: Dockerfile only copied `server.js` and `index.html`, missing the `lib/` folder and frontend files (`styles.css`, `app.js`)
+- **Solution**: Added missing COPY commands to Dockerfile:
+  ```dockerfile
+  COPY styles.css ./
+  COPY app.js ./
+  COPY lib/ ./lib/
+  ```
+- **Prevention**: When modularizing code into new folders, always update Dockerfile to include them. Run `docker exec <container> ls -la` to verify all expected files are present.
+
 <!-- Add new bugs above this line -->
