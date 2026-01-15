@@ -6,6 +6,7 @@ const express = require('express');
 const { influxDB, writeApi, queryApi, Point, parseTopicToInflux, writeSparkplugMetric } = require('./lib/influx/client');
 const { createCmmsProvider } = require('./lib/cmms-interface');
 const aiModule = require('./lib/ai');
+const vectorStore = require('./lib/vector');
 const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/sparkplug/decoder');
 
 // Foundation modules
@@ -98,11 +99,19 @@ mqttClient.on('connect', async () => {
     console.warn('Failed to warm up schema cache on startup:', error.message);
   }
 
+  // Initialize vector store for anomaly persistence (RAG)
+  try {
+    await vectorStore.init({ bedrockClient });
+  } catch (vectorError) {
+    console.warn('Vector store initialization failed (continuing without RAG):', vectorError.message);
+  }
+
   // Initialize AI module with runtime dependencies
   aiModule.init({
     broadcast: broadcastToClients,
     cmms: cmmsProvider,
-    bedrockClient
+    bedrockClient,
+    vectorStore
   });
 
   // Start the agentic trend analysis loop
