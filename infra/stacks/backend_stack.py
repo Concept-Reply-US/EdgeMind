@@ -178,7 +178,7 @@ class BackendStack(Stack):
                 "CHROMA_PORT": "8000",
                 # AgentCore (Bedrock Agents) configuration
                 "AGENTCORE_AGENT_ID": "HRR41EHLP7",
-                "AGENTCORE_ALIAS_ID": "YTCP5LUQFT",
+                "AGENTCORE_ALIAS_ID": "AA6MA4JFFQ",  # v2 with inference profiles
             },
             secrets={
                 # MQTT credentials from Secrets Manager
