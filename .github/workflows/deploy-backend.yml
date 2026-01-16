@@ -18,7 +18,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: edgemind-prod-backend
-  ECS_CLUSTER: edgemind-prod
+  ECS_CLUSTER: edgemind-prod-cluster
   ECS_SERVICE: edgemind-prod-backend
   CONTAINER_NAME: backend
 

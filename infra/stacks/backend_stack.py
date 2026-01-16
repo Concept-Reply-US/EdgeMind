@@ -114,14 +114,19 @@ class BackendStack(Stack):
             )
         )
 
-        # Grant Bedrock permissions (all Claude models for flexibility)
+        # Grant Bedrock permissions (all Claude models and inference profiles)
+        # Note: Inference profiles use cross-region routing, need permissions in multiple regions
         task_definition.task_role.add_to_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
                 actions=["bedrock:InvokeModel"],
                 resources=[
-                    f"arn:aws:bedrock:{self.region}::foundation-model/anthropic.claude-*",
-                    f"arn:aws:bedrock:{self.region}::foundation-model/us.anthropic.claude-*"
+                    # Foundation models in any region (cross-region inference)
+                    "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
+                    "arn:aws:bedrock:*::foundation-model/us.anthropic.claude-*",
+                    # Inference profiles (cross-region routing)
+                    f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/us.anthropic.claude-*",
+                    f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/anthropic.claude-*",
                 ]
             )
         )
