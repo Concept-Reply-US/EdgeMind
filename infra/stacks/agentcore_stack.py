@@ -87,11 +87,15 @@ class AgentCoreStack(Stack):
                     "bedrock:InvokeModelWithResponseStream",
                 ],
                 resources=[
-                    # Foundation models (direct invocation)
+                    # Foundation models (direct invocation) - regional and global
                     "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
-                    # Cross-region inference profiles (required for Bedrock Agents)
                     "arn:aws:bedrock:*::foundation-model/us.anthropic.claude-*",
-                    f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/us.anthropic.claude-*",
+                    # Cross-region inference profiles (multiple ARN patterns for compatibility)
+                    f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/*",
+                    f"arn:aws:bedrock:us::{self.account}:inference-profile/*",
+                    # System-defined inference profiles (no account ID)
+                    "arn:aws:bedrock:us::inference-profile/*",
+                    "arn:aws:bedrock:*::inference-profile/*",
                 ]
             )
         )
