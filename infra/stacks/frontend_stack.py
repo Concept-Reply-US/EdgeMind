@@ -165,6 +165,15 @@ class FrontendStack(Stack):
             ),
             additional_behaviors={
                 # WebSocket connections - CRITICAL: Must forward Sec-WebSocket-* headers
+                # Need both /ws and /ws/* because CloudFront patterns are exact
+                "/ws": cloudfront.BehaviorOptions(
+                    origin=alb_origin,
+                    viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,
+                    cache_policy=cloudfront.CachePolicy.CACHING_DISABLED,
+                    origin_request_policy=websocket_origin_request_policy,
+                    allowed_methods=cloudfront.AllowedMethods.ALLOW_ALL,
+                    compress=False,
+                ),
                 "/ws/*": cloudfront.BehaviorOptions(
                     origin=alb_origin,
                     viewer_protocol_policy=cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,

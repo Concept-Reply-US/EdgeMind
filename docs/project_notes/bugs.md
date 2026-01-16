@@ -141,4 +141,29 @@ This file tracks bugs encountered and their solutions for future reference.
   ```
 - **Prevention**: When writing ECS health checks, verify what binaries are available in the container image. For containers with bash, use TCP checks via `/dev/tcp/`. This is the same solution used in docker-compose.
 
+### 2026-01-16 - CloudFront WebSocket Path Pattern Mismatch
+- **Issue**: WebSocket showed "DISCONNECTED" - frontend couldn't connect through CloudFront
+- **Root Cause**: CloudFront behavior pattern `/ws/*` doesn't match `/ws` (without trailing slash). CloudFront patterns are exact - `/ws/*` matches `/ws/anything` but NOT `/ws` alone.
+- **Solution**: Add separate behavior for `/ws` in addition to `/ws/*`:
+  ```python
+  additional_behaviors={
+      "/ws": cloudfront.BehaviorOptions(...),   # Matches /ws exactly
+      "/ws/*": cloudfront.BehaviorOptions(...), # Matches /ws/anything
+  }
+  ```
+- **Prevention**: When routing paths in CloudFront, always add both exact path and wildcard pattern if the endpoint might be accessed with or without trailing content.
+
+### 2026-01-15 - AWS Secrets Manager: Special Characters in Passwords
+- **Issue**: Backend ECS task failed with "invalid character '!' in string escape code" when retrieving MQTT secret
+- **Root Cause**: Password containing `!` was escaped as `\!` when using inline JSON in shell command. Bash history expansion and shell escaping mangled the password.
+- **Solution**: Write JSON to a temp file and use `file://` prefix:
+  ```bash
+  cat > /tmp/secret.json << 'ENDJSON'
+  {"host":"example.com","password":"pass!word"}
+  ENDJSON
+  aws secretsmanager put-secret-value --secret-id my-secret --secret-string file:///tmp/secret.json
+  rm /tmp/secret.json
+  ```
+- **Prevention**: Always use heredoc with `'ENDJSON'` (single-quoted delimiter) and file:// for secrets containing special characters (`!`, `$`, backticks, etc.)
+
 <!-- Add new bugs above this line -->
