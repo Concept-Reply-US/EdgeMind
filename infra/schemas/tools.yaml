@@ -1,0 +1,309 @@
+openapi: 3.0.0
+info:
+  title: EdgeMind Factory Intelligence Tools
+  description: Action group tools for Bedrock Agents to query factory data
+  version: 1.0.0
+
+paths:
+  /get_oee_breakdown:
+    post:
+      operationId: get_oee_breakdown
+      summary: Get OEE component breakdown for an enterprise
+      description: |
+        Returns Overall Equipment Effectiveness breakdown including Availability,
+        Performance, Quality, and calculated OEE. Use this for Enterprise A and B.
+        Do NOT use for Enterprise C (batch processing).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enterprise
+              properties:
+                enterprise:
+                  type: string
+                  description: Enterprise to query (e.g., "Enterprise A", "Enterprise B", "ALL")
+                  enum:
+                    - Enterprise A
+                    - Enterprise B
+                    - ALL
+      responses:
+        '200':
+          description: OEE breakdown data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enterprise:
+                    type: string
+                  availability:
+                    type: number
+                    description: Availability percentage (0-100)
+                  performance:
+                    type: number
+                    description: Performance percentage (0-100)
+                  quality:
+                    type: number
+                    description: Quality percentage (0-100)
+                  oee:
+                    type: number
+                    description: Overall OEE percentage (A x P x Q / 10000)
+                  limiting_factor:
+                    type: string
+                    description: Which component is lowest (availability, performance, quality)
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /get_equipment_states:
+    post:
+      operationId: get_equipment_states
+      summary: Get current equipment states for an enterprise
+      description: |
+        Returns current state of all equipment (RUNNING, IDLE, DOWN) with
+        duration in current state and last state change timestamp.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enterprise
+              properties:
+                enterprise:
+                  type: string
+                  description: Enterprise to query
+                  enum:
+                    - Enterprise A
+                    - Enterprise B
+                    - Enterprise C
+                    - ALL
+      responses:
+        '200':
+          description: Equipment state data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enterprise:
+                    type: string
+                  equipment:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        machine_id:
+                          type: string
+                        machine_name:
+                          type: string
+                        area:
+                          type: string
+                        state:
+                          type: string
+                          enum: [RUNNING, IDLE, DOWN, MAINTENANCE]
+                        state_duration_minutes:
+                          type: number
+                        last_state_change:
+                          type: string
+                          format: date-time
+                  summary:
+                    type: object
+                    properties:
+                      running_count:
+                        type: integer
+                      idle_count:
+                        type: integer
+                      down_count:
+                        type: integer
+                      total_count:
+                        type: integer
+
+  /get_waste_by_line:
+    post:
+      operationId: get_waste_by_line
+      summary: Get waste breakdown by production line
+      description: |
+        Returns waste/defect quantities broken down by production line and
+        defect type. Includes trend indicators and percentage of total.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - enterprise
+              properties:
+                enterprise:
+                  type: string
+                  description: Enterprise to query
+                  enum:
+                    - Enterprise A
+                    - Enterprise B
+                    - ALL
+                time_range:
+                  type: string
+                  description: Time range for analysis (default 24h)
+                  default: "24h"
+      responses:
+        '200':
+          description: Waste breakdown data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enterprise:
+                    type: string
+                  time_range:
+                    type: string
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        line_name:
+                          type: string
+                        total_waste:
+                          type: number
+                        waste_percentage:
+                          type: number
+                        defect_breakdown:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              defect_type:
+                                type: string
+                              count:
+                                type: number
+                              percentage:
+                                type: number
+                        trend:
+                          type: string
+                          enum: [rising, falling, stable]
+                  total_waste:
+                    type: number
+                  top_contributor:
+                    type: string
+
+  /get_batch_health:
+    post:
+      operationId: get_batch_health
+      summary: Get batch process health for Enterprise C
+      description: |
+        Returns batch process status for pharmaceutical bioprocessing (ISA-88).
+        ONLY use for Enterprise C. Do NOT use OEE terminology - use batch metrics.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enterprise:
+                  type: string
+                  description: Must be Enterprise C
+                  default: "Enterprise C"
+      responses:
+        '200':
+          description: Batch health data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enterprise:
+                    type: string
+                  active_batches:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        batch_id:
+                          type: string
+                        recipe_name:
+                          type: string
+                        current_phase:
+                          type: string
+                        phase_progress_percent:
+                          type: number
+                        start_time:
+                          type: string
+                          format: date-time
+                        expected_completion:
+                          type: string
+                          format: date-time
+                        status:
+                          type: string
+                          enum: [RUNNING, HOLD, COMPLETE, ABORTED]
+                        warnings:
+                          type: array
+                          items:
+                            type: string
+                        parameters:
+                          type: object
+                          properties:
+                            ph:
+                              type: number
+                            dissolved_oxygen:
+                              type: number
+                            temperature:
+                              type: number
+                  completed_today:
+                    type: integer
+                  yield_vs_target:
+                    type: number
+                    description: Percentage of target yield achieved
+                  batches_with_warnings:
+                    type: integer
+
+  /query_influxdb:
+    post:
+      operationId: query_influxdb
+      summary: Execute a Flux query against InfluxDB
+      description: |
+        Execute a Flux query to retrieve time-series data from InfluxDB.
+        Use for custom queries not covered by other tools.
+        IMPORTANT: Query must include time range and should be efficient.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - query
+              properties:
+                query:
+                  type: string
+                  description: |
+                    Flux query to execute. Must include bucket and time range.
+                    Example: from(bucket:"factory") |> range(start: -1h) |> filter(fn: (r) => r._measurement == "oee")
+                max_rows:
+                  type: integer
+                  description: Maximum rows to return (default 1000, max 10000)
+                  default: 1000
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  query:
+                    type: string
+                  row_count:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  execution_time_ms:
+                    type: number
