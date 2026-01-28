@@ -11,6 +11,9 @@ on:
       - 'Dockerfile'
       - 'deploy/**'
       - '.github/workflows/deploy.yml'
+      - 'index.html'
+      - 'app.js'
+      - 'styles.css'
   workflow_dispatch:
 
 permissions:
