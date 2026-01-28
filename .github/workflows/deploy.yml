@@ -12,6 +12,7 @@ permissions:
 env:
   AWS_REGION: us-east-1
   ECR_REPOSITORY: edgemind-prod-backend
+  DEPLOY_BUCKET: edgemind-deploy-artifacts
 
 jobs:
   build-and-deploy:
@@ -53,6 +54,10 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
+      - name: Upload docker-compose.yml to S3
+        run: |
+          aws s3 cp deploy/docker-compose.yml s3://${{ env.DEPLOY_BUCKET }}/docker-compose.yml
+
       - name: Deploy to EC2 via SSM
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -65,6 +70,7 @@ jobs:
               "if ! docker compose version &>/dev/null; then sudo mkdir -p /usr/local/lib/docker/cli-plugins && sudo curl -SL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose && sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose; fi",
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"$ECR_REGISTRY"'",
               "cd /home/ec2-user/app",
+              "aws s3 cp s3://edgemind-deploy-artifacts/docker-compose.yml docker-compose.yml",
               "docker-compose down backend || true",
               "docker rm -f edgemind-backend || true",
               "docker-compose pull",
