@@ -375,4 +375,39 @@ capacity_provider_strategies=[
 
 ---
 
+### ADR-010: Claude Code Agent Workflow (2026-01-28)
+
+**Context:**
+- Claude Code has specialized agents for different tasks
+- Confusion arose about which agent should diagnose vs implement fixes
+- code-reviewer was incorrectly used to both diagnose AND write code
+
+**Decision:**
+- **Strict separation of responsibilities:**
+  - **Engineers** (python-engineer, typescript-engineer, go-engineer) → WRITE code
+  - **code-reviewer** → REVIEW/DIAGNOSE code (never writes production code)
+  - **architect** → Plan and approve (never writes implementation code)
+
+**Correct Workflow for Bug Fixes:**
+1. **code-reviewer** → Diagnose the root cause
+2. **typescript-engineer** (or appropriate language engineer) → Implement the fix
+3. **code-reviewer** → Validate the fix
+
+**Correct Workflow for New Features:**
+1. **architect** → Design architecture
+2. **Engineer** → Implement each module
+3. **code-reviewer** → Validate logic
+4. **security-reviewer** → Check vulnerabilities (if applicable)
+5. **architect** → Final approval
+
+**Consequences:**
+- ✅ Clear ownership of tasks
+- ✅ Engineers write production-quality code
+- ✅ Reviewers focus on quality, not implementation
+- ⚠️ May require multiple agent calls for a single task
+
+**Key Rule:** If you're about to have code-reviewer write code, STOP. Use an engineer instead.
+
+---
+
 <!-- Add new decisions above this line -->
