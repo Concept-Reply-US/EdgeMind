@@ -1424,22 +1424,31 @@ function openAnomalyModal(anomaly) {
     if (reasoningEl) {
         if (anomaly.reasoning) {
             // Build detailed reasoning display
-            let reasoningHtml = `<div class="reasoning-text">${anomaly.reasoning}</div>`;
+            let reasoningHtml = `<div class="reasoning-text">${escapeHtml(anomaly.reasoning)}</div>`;
 
             // Add metric details if available
             if (anomaly.metric || anomaly.actual_value || anomaly.threshold) {
                 reasoningHtml += '<div class="reasoning-details">';
                 if (anomaly.enterprise) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Enterprise:</span> ${anomaly.enterprise}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Enterprise:</span> ${escapeHtml(anomaly.enterprise)}</div>`;
+                }
+                if (anomaly.site) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Site:</span> ${escapeHtml(anomaly.site)}</div>`;
+                }
+                if (anomaly.area) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Area:</span> ${escapeHtml(anomaly.area)}</div>`;
+                }
+                if (anomaly.machine) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Machine:</span> ${escapeHtml(anomaly.machine)}</div>`;
                 }
                 if (anomaly.metric) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Metric:</span> ${anomaly.metric}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Metric:</span> ${escapeHtml(anomaly.metric)}</div>`;
                 }
                 if (anomaly.actual_value) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Actual Value:</span> ${anomaly.actual_value}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Actual Value:</span> ${escapeHtml(String(anomaly.actual_value))}</div>`;
                 }
                 if (anomaly.threshold) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Threshold:</span> ${anomaly.threshold}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Threshold:</span> ${escapeHtml(String(anomaly.threshold))}</div>`;
                 }
                 reasoningHtml += '</div>';
             }
@@ -1562,6 +1571,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Escape') {
             closeAnomalyModal();
             closeSettingsModal();
+            closeAgentModal();
         }
     });
 
@@ -1690,7 +1700,7 @@ function renderActiveFilters() {
 
     container.innerHTML = state.anomalyFilters.map((filter, index) => `
         <div class="filter-chip">
-            <span class="filter-chip-text" title="${filter}">${filter}</span>
+            <span class="filter-chip-text" title="${escapeHtml(filter)}">${escapeHtml(filter)}</span>
             <span class="filter-chip-remove" onclick="removeAnomalyFilter(${index})">×</span>
         </div>
     `).join('');
@@ -1933,4 +1943,155 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Setup agent modal event listeners
+    const agentModalOverlay = document.getElementById('agent-modal-overlay');
+    if (agentModalOverlay) {
+        // Close on backdrop click
+        agentModalOverlay.addEventListener('click', function(e) {
+            if (e.target === agentModalOverlay) {
+                closeAgentModal();
+            }
+        });
+    }
 });
+
+// Agent Modal Functions
+function openAgentModal() {
+    const overlay = document.getElementById('agent-modal-overlay');
+    const content = document.getElementById('agent-modal-content');
+    const countSpan = document.getElementById('modal-anomaly-count');
+
+    if (!overlay || !content) return;
+
+    // Copy current insights to modal (last 20 insights)
+    const insights = state.insights.slice(-20);
+    content.innerHTML = '';
+
+    if (insights.length === 0) {
+        content.innerHTML = `
+            <div class="agent-insights">
+                <div class="insight-text">Waiting for data to analyze. Claude will provide real-time insights as factory data flows in...</div>
+                <div class="insight-meta">Status: Standby • Waiting for MQTT messages</div>
+            </div>
+        `;
+    } else {
+        insights.forEach(insight => {
+            renderModalInsight(insight, content);
+        });
+    }
+
+    // Update anomaly count
+    if (countSpan) {
+        countSpan.textContent = state.anomalies.length;
+    }
+
+    overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeAgentModal() {
+    const overlay = document.getElementById('agent-modal-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function renderModalInsight(insight, container) {
+    const insightEl = document.createElement('div');
+    insightEl.className = 'agent-insights';
+
+    const severityColor = {
+        'low': 'var(--accent-cyan)',
+        'medium': 'var(--accent-amber)',
+        'high': 'var(--accent-red)'
+    }[insight.severity] || 'var(--accent-cyan)';
+
+    insightEl.style.borderLeftColor = severityColor;
+
+    // Support both old format (insight) and new format (summary)
+    const insightText = insight.summary || insight.insight || 'No insight available';
+    const dataInfo = insight.dataPoints ? `${insight.dataPoints} data points` : `${insight.messagesAnalyzed || 0} messages`;
+
+    // Show anomaly count in insight if present
+    const anomalyInfo = insight.anomalies && insight.anomalies.length > 0
+        ? `<span style="color: var(--accent-red)">⚠ ${insight.anomalies.length} anomalies</span> • `
+        : '';
+
+    // Escape user-controlled content to prevent XSS
+    const escapedInsightText = escapeHtml(insightText);
+    const escapedConfidence = escapeHtml(String(insight.confidence || 'N/A'));
+    const escapedSeverity = escapeHtml(String(insight.severity));
+
+    insightEl.innerHTML = `
+        <div class="insight-text">${escapedInsightText}</div>
+        <div class="insight-meta">
+            ${anomalyInfo}Confidence: ${escapedConfidence} •
+            Priority: ${escapedSeverity} •
+            Analyzed ${dataInfo} •
+            ${new Date(insight.timestamp).toLocaleTimeString()}
+        </div>
+    `;
+
+    container.appendChild(insightEl);
+}
+
+function filterModalInsights(filterType, clickedTab) {
+    const content = document.getElementById('agent-modal-content');
+    if (!content) return;
+
+    // Update tab styling
+    const modalTabs = document.querySelectorAll('.agent-modal-tabs .insight-tab');
+    modalTabs.forEach(tab => {
+        tab.classList.remove('active');
+    });
+    if (clickedTab) clickedTab.classList.add('active');
+
+    // Clear content
+    content.innerHTML = '';
+
+    if (filterType === 'anomalies') {
+        // Show only anomalies
+        if (state.anomalies.length === 0) {
+            content.innerHTML = `
+                <div class="agent-insights">
+                    <div class="insight-text">No anomalies detected yet.</div>
+                    <div class="insight-meta">Claude analyzes trends every 30 seconds</div>
+                </div>
+            `;
+        } else {
+            state.anomalies.forEach(anomaly => {
+                const el = document.createElement('div');
+                el.className = 'anomaly-item';
+
+                // Escape user-controlled content to prevent XSS
+                const escapedText = escapeHtml(anomaly.text);
+
+                el.innerHTML = `
+                    <div>${escapedText}</div>
+                    <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleTimeString()}</div>
+                `;
+                // Add click handler to open anomaly details modal
+                el.addEventListener('click', () => {
+                    closeAgentModal();
+                    openAnomalyModal(anomaly);
+                });
+                content.appendChild(el);
+            });
+        }
+    } else {
+        // Show all insights (last 20)
+        const insights = state.insights.slice(-20);
+        if (insights.length === 0) {
+            content.innerHTML = `
+                <div class="agent-insights">
+                    <div class="insight-text">Waiting for data to analyze...</div>
+                    <div class="insight-meta">Status: Standby</div>
+                </div>
+            `;
+        } else {
+            insights.forEach(insight => renderModalInsight(insight, content));
+        }
+    }
+}
