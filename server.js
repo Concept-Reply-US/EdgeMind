@@ -1763,20 +1763,20 @@ app.get('/api/batch/status', async (req, res) => {
           const [, fcNumber, metricType] = fcMatch;
           const metricLower = metricType.toLowerCase();
 
-          // Categorize metrics
+          // Categorize metrics (with null guards to prevent NaN)
           if (metricLower.includes('fan') && metricLower.includes('status')) {
             zone.metrics.fanStatus = parsedValue;
           } else if (metricLower.includes('ambient') && metricLower.includes('temperature')) {
-            zone.metrics.temperature = typeof parsedValue === 'number' ? parsedValue : parseFloat(parsedValue);
+            zone.metrics.temperature = typeof parsedValue === 'number' ? parsedValue : (parsedValue != null ? parseFloat(parsedValue) : null);
           } else if (metricLower.includes('temperature') && !metricLower.includes('ambient')) {
             // Generic temperature fallback
             if (!zone.metrics.temperature) {
-              zone.metrics.temperature = typeof parsedValue === 'number' ? parsedValue : parseFloat(parsedValue);
+              zone.metrics.temperature = typeof parsedValue === 'number' ? parsedValue : (parsedValue != null ? parseFloat(parsedValue) : null);
             }
           } else if (metricLower.includes('humid')) {
-            zone.metrics.humidity = typeof parsedValue === 'number' ? parsedValue : parseFloat(parsedValue);
+            zone.metrics.humidity = typeof parsedValue === 'number' ? parsedValue : (parsedValue != null ? parseFloat(parsedValue) : null);
           } else if (metricLower.includes('pm2') || metricLower.includes('pm_2') || metricLower.includes('air_quality')) {
-            zone.metrics.pm25 = typeof parsedValue === 'number' ? parsedValue : parseFloat(parsedValue);
+            zone.metrics.pm25 = typeof parsedValue === 'number' ? parsedValue : (parsedValue != null ? parseFloat(parsedValue) : null);
           }
 
           zone.lastUpdate = o._time;
@@ -1791,8 +1791,7 @@ app.get('/api/batch/status', async (req, res) => {
       });
     });
 
-    // Get cleanroom thresholds from domain context
-    const { getEnterpriseContext } = require('./lib/domain-context');
+    // Get cleanroom thresholds from domain context (getEnterpriseContext already imported at top)
     const enterpriseContext = getEnterpriseContext('Enterprise C');
     const thresholds = enterpriseContext?.cleanroomThresholds || {
       'PM2.5': { warning: 5, critical: 10 },

@@ -927,9 +927,9 @@ function renderBatchOperations(data) {
             <div class="batch-summary" style="margin-top: 20px;">
                 <h4 style="width: 100%; margin-bottom: 8px; color: var(--text-primary); font-size: 0.95rem;">Cleanroom Environmental Zones</h4>
                 <div class="cleanroom-summary">
-                    ${cleanroomSummary.avgTemp !== null ? `<span>Avg Temp: ${cleanroomSummary.avgTemp.toFixed(1)}°C</span>` : ''}
-                    ${cleanroomSummary.avgHumidity !== null ? `<span>Avg Humidity: ${cleanroomSummary.avgHumidity.toFixed(0)}%</span>` : ''}
-                    ${cleanroomSummary.avgPm25 !== null ? `<span>Avg PM2.5: ${cleanroomSummary.avgPm25.toFixed(1)} µg/m³</span>` : ''}
+                    ${cleanroomSummary.avgTemp !== null && !isNaN(cleanroomSummary.avgTemp) ? `<span>Avg Temp: ${cleanroomSummary.avgTemp.toFixed(1)}°C</span>` : ''}
+                    ${cleanroomSummary.avgHumidity !== null && !isNaN(cleanroomSummary.avgHumidity) ? `<span>Avg Humidity: ${cleanroomSummary.avgHumidity.toFixed(0)}%</span>` : ''}
+                    ${cleanroomSummary.avgPm25 !== null && !isNaN(cleanroomSummary.avgPm25) ? `<span>Avg PM2.5: ${cleanroomSummary.avgPm25.toFixed(1)} µg/m³</span>` : ''}
                     <span class="pm25-status ${cleanroomSummary.pm25Status?.toLowerCase() || 'good'}">
                         PM2.5: ${cleanroomSummary.pm25Status || 'Unknown'}
                     </span>
