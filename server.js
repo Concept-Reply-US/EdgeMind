@@ -256,10 +256,14 @@ mqttClient.on('message', async (topic, message) => {
       // For Enterprise C ISA-88 equipment, extract equipment ID from measurement name
       // Measurement names like CHR01_STATE, SUB250_STATE contain the equipment ID
       const measurementName = parts[parts.length - 1];
+      const equipmentNormalization = {
+        'UNIT_250': 'SUB250',
+        'UNIT_500': 'SUM500'
+      };
       const equipmentPatterns = ['CHR01', 'SUB250', 'SUM500', 'TFF300', 'UNIT_250', 'UNIT_500'];
       for (const pattern of equipmentPatterns) {
         if (measurementName.includes(pattern)) {
-          machine = pattern.replace('UNIT_', 'SUB'); // Normalize UNIT_250 to SUB250
+          machine = equipmentNormalization[pattern] || pattern;
           break;
         }
       }
@@ -276,7 +280,8 @@ mqttClient.on('message', async (topic, message) => {
         try {
           const parsed = JSON.parse(payload);
           if (parsed && typeof parsed === 'object' && 'value' in parsed) {
-            actualPayload = parsed.value;
+            // Handle <nil> as null (skip state detection for nil values)
+            actualPayload = parsed.value === '<nil>' ? null : parsed.value;
           }
         } catch {
           // Not valid JSON, use raw payload
