@@ -420,7 +420,12 @@ async function fetchQualityMetrics(signal) {
         };
 
         let html = '';
-        ['Enterprise A', 'Enterprise B', 'Enterprise C'].forEach(enterprise => {
+        // Filter enterprises based on selected filter
+        const selectedEnterprise = getEnterpriseParam();
+        const enterprises = selectedEnterprise === 'ALL'
+            ? ['Enterprise A', 'Enterprise B', 'Enterprise C']
+            : [selectedEnterprise];
+        enterprises.forEach(enterprise => {
             const summary = data.summary[enterprise];
             if (summary) {
                 const status = getStatus(summary.avg, enterprise);
@@ -840,15 +845,110 @@ function updateEquipmentStateGrid() {
     }).join('');
 }
 
-// Fetch line OEE from API
+// Fetch batch status for Enterprise C
+async function fetchBatchStatus(signal) {
+    try {
+        const response = await fetch('/api/batch/status', { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP error: ${response.status}`);
+        }
+        const data = await response.json();
+        renderBatchOperations(data);
+    } catch (error) {
+        if (error.name === 'AbortError') return;
+        console.error('Error fetching batch status:', error);
+        renderBatchOperationsError();
+    }
+}
+
+// Render batch operations panel
+function renderBatchOperations(data) {
+    const grid = document.getElementById('line-oee-grid');
+    const title = document.getElementById('line-panel-title');
+    if (!grid) return;
+
+    // Update panel title
+    if (title) {
+        title.textContent = 'Batch Operations';
+    }
+
+    if (!data.equipment || data.equipment.length === 0) {
+        grid.innerHTML = '<div class="heatmap-loading">No batch equipment data available</div>';
+        return;
+    }
+
+    // State color mapping
+    const stateColors = {
+        'Running': 'var(--accent-green)',
+        'Idle': 'var(--accent-amber)',
+        'Complete': 'var(--accent-cyan)',
+        'Fault': 'var(--accent-magenta)',
+        'Stopped': 'var(--accent-red)'
+    };
+
+    // Build summary row
+    const summary = data.summary || { running: 0, idle: 0, complete: 0, fault: 0, total: 0 };
+    const summaryHtml = `
+        <div class="batch-summary">
+            <span class="summary-item running">${summary.running} Running</span>
+            <span class="summary-item idle">${summary.idle} Idle</span>
+            <span class="summary-item complete">${summary.complete} Complete</span>
+            <span class="summary-item fault">${summary.fault} Fault</span>
+        </div>
+    `;
+
+    // Build equipment cards
+    const cardsHtml = data.equipment.map(equip => {
+        const state = equip.state || 'Unknown';
+        const stateColor = stateColors[state] || 'var(--text-dim)';
+        const stateClass = state.toLowerCase().replace(/\s+/g, '-');
+
+        return `
+            <div class="batch-card ${stateClass}">
+                <div class="batch-header">
+                    <span class="equipment-name">${escapeHtml(equip.name || equip.id)}</span>
+                    <span class="equipment-state state-${stateClass}" style="color: ${stateColor};">${escapeHtml(state)}</span>
+                </div>
+                <div class="batch-details">
+                    <div class="batch-phase">Phase: ${escapeHtml(equip.phase || 'N/A')}</div>
+                    <div class="batch-id">Batch: ${escapeHtml(equip.batchId || 'N/A')}</div>
+                    <div class="batch-recipe">Recipe: ${escapeHtml(equip.recipe || 'N/A')}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    grid.innerHTML = summaryHtml + cardsHtml;
+}
+
+// Render batch operations error state
+function renderBatchOperationsError() {
+    const grid = document.getElementById('line-oee-grid');
+    const title = document.getElementById('line-panel-title');
+    if (!grid) return;
+
+    if (title) {
+        title.textContent = 'Batch Operations';
+    }
+
+    grid.innerHTML = '<div class="heatmap-loading">Failed to load batch operations</div>';
+}
+
+// Fetch line OEE from API (or batch status for Enterprise C)
 async function fetchLineOEE(signal) {
+    // Check if we should show batch operations instead
+    const enterprise = getEnterpriseParam();
+    if (enterprise === 'Enterprise C') {
+        await fetchBatchStatus(signal);
+        return;
+    }
+
     try {
         const response = await fetch('/api/oee/lines', { signal });
         const data = await response.json();
 
         if (data.lines && Array.isArray(data.lines)) {
             // Filter by global selectedFactory
-            const enterprise = getEnterpriseParam();
             let filteredLines = data.lines;
             if (enterprise !== 'ALL') {
                 filteredLines = data.lines.filter(line => line.enterprise === enterprise);
@@ -873,7 +973,13 @@ async function fetchLineOEE(signal) {
 // Render line OEE grid
 function renderLineOEEGrid(lines) {
     const grid = document.getElementById('line-oee-grid');
+    const title = document.getElementById('line-panel-title');
     if (!grid) return;
+
+    // Update panel title
+    if (title) {
+        title.textContent = 'Production Line OEE';
+    }
 
     if (lines.length === 0) {
         grid.innerHTML = '<div class="heatmap-loading">No lines available for selected enterprise</div>';

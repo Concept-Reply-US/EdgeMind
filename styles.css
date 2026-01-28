@@ -1347,6 +1347,141 @@
             font-weight: 700;
         }
 
+        /* Batch Operations Styles */
+        .batch-summary {
+            display: flex;
+            gap: 15px;
+            justify-content: space-around;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 6px;
+            margin-bottom: 15px;
+            border: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .summary-item {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-item.running {
+            color: var(--accent-green);
+        }
+
+        .summary-item.idle {
+            color: var(--accent-amber);
+        }
+
+        .summary-item.complete {
+            color: var(--accent-cyan);
+        }
+
+        .summary-item.fault {
+            color: var(--accent-magenta);
+        }
+
+        .batch-card {
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 2px solid;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .batch-card.running {
+            border-color: var(--accent-green);
+            background: rgba(0, 255, 136, 0.05);
+        }
+
+        .batch-card.idle {
+            border-color: var(--accent-amber);
+            background: rgba(255, 191, 0, 0.05);
+        }
+
+        .batch-card.complete {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 255, 255, 0.05);
+        }
+
+        .batch-card.fault, .batch-card.stopped {
+            border-color: var(--accent-magenta);
+            background: rgba(255, 0, 255, 0.05);
+        }
+
+        .batch-card.unknown {
+            border-color: var(--text-dim);
+            background: rgba(107, 114, 128, 0.05);
+        }
+
+        .batch-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 255, 255, 0.3);
+        }
+
+        .batch-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .equipment-name {
+            font-family: 'Rajdhani', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .equipment-state {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 4px 8px;
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.5);
+            text-transform: uppercase;
+        }
+
+        .batch-details {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+        }
+
+        .batch-phase, .batch-id, .batch-recipe {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .batch-phase::before {
+            content: '▶';
+            color: var(--accent-cyan);
+            font-size: 0.6rem;
+        }
+
+        .batch-id::before {
+            content: '🔖';
+            font-size: 0.75rem;
+        }
+
+        .batch-recipe::before {
+            content: '📋';
+            font-size: 0.75rem;
+        }
+
         /* Charts placeholder */
         .chart-panel {
             grid-column: span 6;

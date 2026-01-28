@@ -706,12 +706,23 @@ app.get('/api/schema/hierarchy', async (req, res) => {
 // NEW: Equipment states endpoint - returns current equipment states
 app.get('/api/equipment/states', async (req, res) => {
   try {
+    // SECURITY: Validate enterprise parameter
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null) {
+      return res.status(400).json({ error: 'Invalid enterprise parameter' });
+    }
+
     const now = Date.now();
     const states = [];
     const summary = { running: 0, idle: 0, down: 0, unknown: 0 };
 
     // Convert Map to array with calculated durations
     for (const [key, stateData] of equipmentStateCache.states.entries()) {
+      // Filter by enterprise if specified
+      if (enterprise && enterprise !== 'ALL' && stateData.enterprise !== enterprise) {
+        continue;
+      }
+
       const durationMs = now - new Date(stateData.firstSeen).getTime();
 
       states.push({
@@ -863,6 +874,17 @@ app.get('/api/oee/lines', async (req, res) => {
 // NEW: Waste/Defect tracking endpoint
 app.get('/api/waste/trends', async (req, res) => {
   try {
+    // SECURITY: Validate enterprise parameter
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null) {
+      return res.status(400).json({ error: 'Invalid enterprise parameter' });
+    }
+
+    // Build enterprise filter for Flux query
+    const enterpriseFilter = (enterprise && enterprise !== 'ALL')
+      ? `|> filter(fn: (r) => r.enterprise == "${sanitizeInfluxIdentifier(enterprise)}")`
+      : '';
+
     const fluxQuery = `
       from(bucket: "factory")
         |> range(start: -24h)
@@ -880,6 +902,7 @@ app.get('/api/waste/trends', async (req, res) => {
           r._measurement == "edge_reject_gate_status"
         )
         |> filter(fn: (r) => r._value >= 0)
+        ${enterpriseFilter}
         |> group(columns: ["enterprise", "area", "_measurement"])
         |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
     `;
@@ -983,6 +1006,17 @@ app.get('/api/waste/trends', async (req, res) => {
 // NEW: Waste by production line endpoint
 app.get('/api/waste/by-line', async (req, res) => {
   try {
+    // SECURITY: Validate enterprise parameter
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null) {
+      return res.status(400).json({ error: 'Invalid enterprise parameter' });
+    }
+
+    // Build enterprise filter for Flux query
+    const enterpriseFilter = (enterprise && enterprise !== 'ALL')
+      ? `|> filter(fn: (r) => r.enterprise == "${sanitizeInfluxIdentifier(enterprise)}")`
+      : '';
+
     const fluxQuery = `
       from(bucket: "factory")
         |> range(start: -24h)
@@ -1000,6 +1034,7 @@ app.get('/api/waste/by-line', async (req, res) => {
           r._measurement == "edge_reject_gate_status"
         )
         |> filter(fn: (r) => r._value >= 0)
+        ${enterpriseFilter}
         |> group(columns: ["enterprise", "site", "area", "_measurement"])
         |> sum()
     `;
@@ -1520,23 +1555,135 @@ app.get('/api/waste/breakdown', async (req, res) => {
 });
 
 /**
- * GET /api/batch/health - Batch process health for Enterprise C (stub)
- * Returns mock data until ISA-88 batch tracking is implemented
+ * GET /api/batch/status - ISA-88 batch process status for Enterprise C
+ * Returns current status of batch equipment (CHR01, SUB250, SUM500, TFF300)
  */
-app.get('/api/batch/health', async (req, res) => {
+app.get('/api/batch/status', async (req, res) => {
   try {
-    // TODO: Implement ISA-88 batch tracking for Enterprise C
-    // For now, return placeholder data
+    // Query InfluxDB for latest batch equipment states
+    const fluxQuery = `
+      from(bucket: "${CONFIG.influxdb.bucket}")
+        |> range(start: -15m)
+        |> filter(fn: (r) => r._field == "value")
+        |> filter(fn: (r) => r.enterprise == "Enterprise C")
+        |> filter(fn: (r) =>
+          r._measurement =~ /STATE/ or
+          r._measurement =~ /PHASE/ or
+          r._measurement =~ /BATCH_ID/ or
+          r._measurement =~ /RECIPE/ or
+          r._measurement =~ /STATUS/ or
+          r._measurement =~ /FORMULA/
+        )
+        |> last()
+    `;
+
+    // Equipment metadata mapping
+    const equipmentMetadata = {
+      'CHR01': { name: 'Chromatography Unit', type: 'chromatography' },
+      'SUB250': { name: 'Single-Use Bioreactor 250L', type: 'bioreactor' },
+      'SUM500': { name: 'Single-Use Mixer 500L', type: 'mixer' },
+      'TFF300': { name: 'Tangential Flow Filtration 300', type: 'filtration' }
+    };
+
+    // Collect measurement data by equipment
+    const equipmentData = new Map();
+
+    await new Promise((resolve) => {
+      queryApi.queryRows(fluxQuery, {
+        next(row, tableMeta) {
+          const o = tableMeta.toObject(row);
+          if (!o._measurement || !o._value) return;
+
+          // Extract equipment ID from measurement name
+          let equipmentId = null;
+          for (const id of Object.keys(equipmentMetadata)) {
+            if (o._measurement.includes(id) || o._measurement.includes(id.toLowerCase())) {
+              equipmentId = id;
+              break;
+            }
+          }
+
+          if (!equipmentId) return;
+
+          // Initialize equipment entry if needed
+          if (!equipmentData.has(equipmentId)) {
+            equipmentData.set(equipmentId, {
+              id: equipmentId,
+              site: o.site || 'Unknown',
+              measurements: {},
+              lastUpdate: o._time
+            });
+          }
+
+          const equipment = equipmentData.get(equipmentId);
+
+          // Categorize measurement by type
+          const measurement = o._measurement.toLowerCase();
+          if (measurement.includes('state') || measurement.includes('status')) {
+            equipment.measurements.state = o._value;
+            equipment.lastUpdate = o._time;
+          } else if (measurement.includes('phase')) {
+            equipment.measurements.phase = o._value;
+          } else if (measurement.includes('batch_id')) {
+            equipment.measurements.batchId = o._value;
+          } else if (measurement.includes('recipe') || measurement.includes('formula')) {
+            equipment.measurements.recipe = o._value;
+          }
+        },
+        error(error) {
+          console.error('Batch status query error:', error);
+          resolve();
+        },
+        complete() {
+          resolve();
+        }
+      });
+    });
+
+    // Build response with equipment status
+    const equipment = [];
+    const summary = { running: 0, idle: 0, complete: 0, fault: 0, total: 0 };
+
+    for (const [id, data] of equipmentData.entries()) {
+      const metadata = equipmentMetadata[id];
+      const state = data.measurements.state || 'Unknown';
+
+      // Normalize state for summary
+      const stateLower = state.toString().toLowerCase();
+      let summaryKey = 'idle';
+      if (stateLower.includes('run')) summaryKey = 'running';
+      else if (stateLower.includes('complete') || stateLower.includes('done')) summaryKey = 'complete';
+      else if (stateLower.includes('fault') || stateLower.includes('error') || stateLower.includes('alarm')) summaryKey = 'fault';
+
+      summary[summaryKey]++;
+      summary.total++;
+
+      equipment.push({
+        id,
+        name: metadata.name,
+        type: metadata.type,
+        site: data.site,
+        state,
+        phase: data.measurements.phase || null,
+        batchId: data.measurements.batchId || null,
+        recipe: data.measurements.recipe || null,
+        lastUpdate: data.lastUpdate
+      });
+    }
+
+    // Sort by equipment ID for consistency
+    equipment.sort((a, b) => a.id.localeCompare(b.id));
+
     res.json({
-      enterprise: 'Enterprise C',
-      batches: [],
-      message: 'Enterprise C uses ISA-88 batch control (not yet fully implemented)',
+      equipment,
+      summary,
       timestamp: new Date().toISOString()
     });
+
   } catch (error) {
-    console.error('Batch health endpoint error:', error);
+    console.error('Batch status endpoint error:', error);
     res.status(500).json({
-      error: 'Failed to query batch health',
+      error: 'Failed to query batch status',
       message: error.message
     });
   }
