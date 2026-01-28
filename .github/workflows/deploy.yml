@@ -71,10 +71,10 @@ jobs:
               "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin '"$ECR_REGISTRY"'",
               "cd /home/ec2-user/app",
               "aws s3 cp s3://edgemind-deploy-artifacts/docker-compose.yml docker-compose.yml",
-              "docker-compose down backend || true",
-              "docker rm -f edgemind-backend || true",
+              "docker-compose down --remove-orphans || true",
+              "docker rm -f edgemind-backend chromadb influxdb || true",
               "docker-compose pull",
-              "docker-compose up -d backend",
+              "docker-compose up -d",
               "docker image prune -f",
               "echo Deployment complete!"
             ]' \
