@@ -207,4 +207,25 @@ This file tracks bugs encountered and their solutions for future reference.
   - Use InfluxDB `pivot()` to get related measurements in single query
   - Commit: `4ff3dbd`
 
+### 2026-01-28 - OEE Value Inconsistency (72% vs 10.6%)
+- **Issue**: Same enterprise returned wildly different OEE values between consecutive AI trend analysis runs: 72% vs 10.6%
+- **Root Cause**: Value format detection used cached `sampleValues` from schema discovery to determine if data was decimal (0.72 = 72%) or percentage (72 = 72%). The threshold of 1.5 was problematic:
+  - If discovery saw values `[0.72, 0.85]` -> detected as `decimal` -> multiplied by 100 -> 72%
+  - If discovery saw values `[10.6, 13.8]` -> detected as `percentage` (>1.5) -> NOT multiplied -> 10.6%
+  - The `oeeConfig.enterprises` singleton cached the first detection, but schema refresh could change sample values while keeping stale valueFormat
+- **Solution**: Changed normalization to detect format from **actual queried values** at runtime, not cached config:
+  ```javascript
+  // ROBUST NORMALIZATION: Detect format from actual value, not cached config
+  // Values <= 1.5 are decimal (0.72 = 72%), values > 1.5 are already percentages
+  const actualFormat = (oeeValue !== null && oeeValue <= 1.5) ? 'decimal' : 'percentage';
+  if (oeeValue !== null && actualFormat === 'decimal') {
+    oeeValue = oeeValue * 100;
+  }
+  ```
+  Added comprehensive logging with request IDs to track tier, raw values, and normalization decisions.
+- **Prevention**:
+  - Always normalize OEE values based on the actual queried value, not cached metadata
+  - Add logging with unique request IDs to trace calculation paths in production
+  - Files affected: `lib/oee/index.js`
+
 <!-- Add new bugs above this line -->
