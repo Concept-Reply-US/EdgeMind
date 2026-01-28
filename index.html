@@ -26,19 +26,19 @@
             <div class="card factory-overview">
                 <div class="card-title">Virtual Factory Selection</div>
                 <div class="factory-selector">
-                    <div class="factory-btn active" onclick="selectFactory('ALL', event)">
+                    <div class="factory-btn active" data-factory="ALL">
                         <div>ALL ENTERPRISES</div>
                         <div class="factory-status">Combined View • Online</div>
                     </div>
-                    <div class="factory-btn" onclick="selectFactory('A', event)">
+                    <div class="factory-btn" data-factory="A">
                         <div>ENTERPRISE A</div>
                         <div class="factory-status">Glass Manufacturing • Online</div>
                     </div>
-                    <div class="factory-btn" onclick="selectFactory('B', event)">
+                    <div class="factory-btn" data-factory="B">
                         <div>ENTERPRISE B</div>
                         <div class="factory-status">Multi-Site Beverage • Online</div>
                     </div>
-                    <div class="factory-btn" onclick="selectFactory('C', event)">
+                    <div class="factory-btn" data-factory="C">
                         <div>ENTERPRISE C</div>
                         <div class="factory-status">Biotech Facility • Online</div>
                     </div>
@@ -97,7 +97,10 @@
 
             <!-- AI Agent -->
             <div class="card ai-agent">
-                <div class="card-title">Claude AI Agent</div>
+                <div class="card-title">
+                    Claude AI Agent
+                    <button class="maximize-btn" onclick="openAgentModal()" title="Expand">⛶</button>
+                </div>
                 <div class="agent-header">
                     <div class="agent-avatar">C</div>
                     <div class="agent-status">
@@ -265,12 +268,32 @@
 
     <script src="app.js"></script>
 
+    <!-- Agent Modal Overlay -->
+    <div class="agent-modal-overlay" id="agent-modal-overlay">
+        <div class="agent-modal">
+            <div class="agent-modal-header">
+                <div class="agent-modal-title">
+                    <div class="agent-avatar-small">C</div>
+                    <span>Edge Minder - AI Insights</span>
+                </div>
+                <button class="agent-modal-close modal-close-btn" onclick="closeAgentModal()">×</button>
+            </div>
+            <div class="agent-modal-tabs">
+                <button class="insight-tab active" onclick="filterModalInsights('all', this)">All Insights</button>
+                <button class="insight-tab" onclick="filterModalInsights('anomalies', this)">Anomalies (<span id="modal-anomaly-count">0</span>)</button>
+            </div>
+            <div class="agent-modal-content" id="agent-modal-content">
+                <!-- Insights rendered here -->
+            </div>
+        </div>
+    </div>
+
     <!-- Anomaly Details Modal -->
     <div class="anomaly-modal-overlay" id="anomaly-modal-overlay">
         <div class="anomaly-modal">
             <div class="anomaly-modal-header">
                 <div class="anomaly-modal-title">Anomaly Details</div>
-                <button class="anomaly-modal-close" id="close-anomaly-modal">×</button>
+                <button class="anomaly-modal-close modal-close-btn" id="close-anomaly-modal">×</button>
             </div>
             <div class="anomaly-modal-content">
                 <div class="anomaly-modal-text" id="anomaly-modal-text"></div>
@@ -294,7 +317,7 @@
         <div class="settings-modal">
             <div class="settings-modal-header">
                 <div class="settings-modal-title">Alert Threshold Settings</div>
-                <button class="settings-modal-close" onclick="closeSettingsModal()">×</button>
+                <button class="settings-modal-close modal-close-btn" onclick="closeSettingsModal()">×</button>
             </div>
             <div class="settings-modal-content">
                 <div class="settings-group">

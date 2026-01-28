@@ -30,6 +30,7 @@ let isConnected = false;
 let messageRate = 0;
 let lastMessageTime = Date.now();
 let messagesSinceLastRate = 0;
+let refreshAbortController = null;
 
 // State
 const state = {
@@ -246,7 +247,7 @@ function updateCharts() {
 }
 
 // Fetch OEE breakdown and update chart
-async function fetchOEEBreakdown() {
+async function fetchOEEBreakdown(signal) {
     try {
         // Hide chart if filtering to single enterprise
         const oeeBreakdownContainer = document.getElementById('oee-breakdown-chart');
@@ -258,7 +259,7 @@ async function fetchOEEBreakdown() {
             chartCard.style.display = '';
         }
 
-        const response = await fetch('/api/oee/breakdown');
+        const response = await fetch('/api/oee/breakdown', { signal });
         const data = await response.json();
 
         if (window.oeeBreakdownChart && data.data) {
@@ -273,18 +274,19 @@ async function fetchOEEBreakdown() {
             window.oeeBreakdownChart.update('none');
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch OEE breakdown:', error);
     }
 }
 
 // Fetch waste trends and update chart
-async function fetchWasteTrends() {
+async function fetchWasteTrends(signal) {
     try {
         const enterprise = getEnterpriseParam();
         const url = enterprise !== 'ALL'
             ? `/api/waste/trends?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/trends';
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         const data = await response.json();
 
         if (window.wasteTrendChart && data.linesSummary) {
@@ -326,18 +328,19 @@ async function fetchWasteTrends() {
             window.wasteTrendChart.update('none');
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch waste trends:', error);
     }
 }
 
 // Fetch scrap by line and update chart
-async function fetchScrapByLine() {
+async function fetchScrapByLine(signal) {
     try {
         const enterprise = getEnterpriseParam();
         const url = enterprise !== 'ALL'
             ? `/api/waste/by-line?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/by-line';
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         const data = await response.json();
 
         if (window.scrapByLineChart && data.lines) {
@@ -354,18 +357,19 @@ async function fetchScrapByLine() {
             window.scrapByLineChart.update('none');
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch scrap by line:', error);
     }
 }
 
 // Fetch and render quality metrics from waste/trends summary
-async function fetchQualityMetrics() {
+async function fetchQualityMetrics(signal) {
     try {
         const enterprise = getEnterpriseParam();
         const url = enterprise !== 'ALL'
             ? `/api/waste/trends?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/trends';
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         const data = await response.json();
 
         const grid = document.getElementById('quality-grid');
@@ -446,6 +450,7 @@ async function fetchQualityMetrics() {
 
         grid.innerHTML = html;
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch quality metrics:', error);
         const grid = document.getElementById('quality-grid');
         if (grid) {
@@ -455,20 +460,21 @@ async function fetchQualityMetrics() {
 }
 
 // Fetch factory status and render production heatmap
-async function fetchFactoryStatus() {
+async function fetchFactoryStatus(signal) {
     try {
         const enterprise = getEnterpriseParam();
         const url = enterprise !== 'ALL'
             ? `/api/factory/status?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/factory/status';
 
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         const data = await response.json();
 
         if (data.enterprises) {
             renderProductionHeatmap(data.enterprises);
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch factory status:', error);
         const container = document.getElementById('production-heatmap');
         if (container) {
@@ -726,13 +732,13 @@ function handleServerMessage(message) {
 }
 
 // Fetch equipment states from API
-async function fetchEquipmentStates() {
+async function fetchEquipmentStates(signal) {
     try {
         const enterprise = getEnterpriseParam();
         const url = enterprise !== 'ALL'
             ? `/api/equipment/states?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/equipment/states';
-        const response = await fetch(url);
+        const response = await fetch(url, { signal });
         const data = await response.json();
 
         if (data.states && Array.isArray(data.states)) {
@@ -768,6 +774,7 @@ async function fetchEquipmentStates() {
             updateEquipmentStateGrid();
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch equipment states:', error);
         const grid = document.getElementById('equipment-state-grid');
         if (grid) {
@@ -834,9 +841,9 @@ function updateEquipmentStateGrid() {
 }
 
 // Fetch line OEE from API
-async function fetchLineOEE() {
+async function fetchLineOEE(signal) {
     try {
-        const response = await fetch('/api/oee/lines');
+        const response = await fetch('/api/oee/lines', { signal });
         const data = await response.json();
 
         if (data.lines && Array.isArray(data.lines)) {
@@ -854,6 +861,7 @@ async function fetchLineOEE() {
             }
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch line OEE:', error);
         const grid = document.getElementById('line-oee-grid');
         if (grid) {
@@ -1029,6 +1037,45 @@ function addMQTTMessageToStream(message) {
     }
 }
 
+// Shared helper to create insight HTML element
+function createInsightElement(insight) {
+    const insightEl = document.createElement('div');
+    insightEl.className = 'agent-insights';
+
+    const severityColors = {
+        'low': 'var(--accent-cyan)',
+        'medium': 'var(--accent-amber)',
+        'high': 'var(--accent-red)'
+    };
+    insightEl.style.borderLeftColor = severityColors[insight.severity] || severityColors['low'];
+
+    // Support both old format (insight) and new format (summary)
+    const insightText = insight.summary || insight.insight || 'No insight available';
+    const dataInfo = insight.dataPoints ? `${insight.dataPoints} data points` : `${insight.messagesAnalyzed || 0} messages`;
+
+    // Show anomaly count in insight if present
+    const anomalyInfo = insight.anomalies && insight.anomalies.length > 0
+        ? `<span style="color: var(--accent-red)">⚠ ${insight.anomalies.length} anomalies</span> • `
+        : '';
+
+    // Escape user-controlled content to prevent XSS
+    const escapedInsightText = escapeHtml(insightText);
+    const escapedConfidence = escapeHtml(String(insight.confidence || 'N/A'));
+    const escapedSeverity = escapeHtml(String(insight.severity));
+
+    insightEl.innerHTML = `
+        <div class="insight-text">${escapedInsightText}</div>
+        <div class="insight-meta">
+            ${anomalyInfo}Confidence: ${escapedConfidence} •
+            Priority: ${escapedSeverity} •
+            Analyzed ${dataInfo} •
+            ${insight.timestamp ? new Date(insight.timestamp).toLocaleTimeString() : ''}
+        </div>
+    `;
+
+    return insightEl;
+}
+
 // Add Claude insight to the AI agent panel
 function addClaudeInsight(insight) {
     // Extract anomalies from insight - supports both old (string) and new (object) formats
@@ -1076,41 +1123,7 @@ function addClaudeInsight(insight) {
     const container = document.getElementById('claude-insights-container');
     if (!container) return;
 
-    const insightEl = document.createElement('div');
-    insightEl.className = 'agent-insights';
-
-    const severityColor = {
-        'low': 'var(--accent-cyan)',
-        'medium': 'var(--accent-amber)',
-        'high': 'var(--accent-red)'
-    }[insight.severity] || 'var(--accent-cyan)';
-
-    insightEl.style.borderLeftColor = severityColor;
-
-    // Support both old format (insight) and new format (summary)
-    const insightText = insight.summary || insight.insight || 'No insight available';
-    const dataInfo = insight.dataPoints ? `${insight.dataPoints} data points` : `${insight.messagesAnalyzed || 0} messages`;
-
-    // Show anomaly count in insight if present
-    const anomalyInfo = insight.anomalies && insight.anomalies.length > 0
-        ? `<span style="color: var(--accent-red)">⚠ ${insight.anomalies.length} anomalies</span> • `
-        : '';
-
-    // Escape user-controlled content to prevent XSS
-    const escapedInsightText = escapeHtml(insightText);
-    const escapedConfidence = escapeHtml(String(insight.confidence || 'N/A'));
-    const escapedSeverity = escapeHtml(String(insight.severity));
-
-    insightEl.innerHTML = `
-        <div class="insight-text">${escapedInsightText}</div>
-        <div class="insight-meta">
-            ${anomalyInfo}Confidence: ${escapedConfidence} •
-            Priority: ${escapedSeverity} •
-            Analyzed ${dataInfo} •
-            ${new Date(insight.timestamp).toLocaleTimeString()}
-        </div>
-    `;
-
+    const insightEl = createInsightElement(insight);
     container.insertBefore(insightEl, container.firstChild);
 
     // Keep only last 5 insights visible
@@ -1258,52 +1271,66 @@ function displayClaudeResponse(data) {
 }
 
 // Factory selection
-function selectFactory(factory, event) {
+function selectFactory(factory) {
+    if (state.selectedFactory === factory) return;
+
+    if (refreshAbortController) refreshAbortController.abort();
+
     state.selectedFactory = factory;
-    document.querySelectorAll('.factory-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    if (event && event.target) {
-        event.target.closest('.factory-btn').classList.add('active');
+    try {
+        localStorage.setItem('edgemind_selectedFactory', factory);
+    } catch (e) {
+        // localStorage unavailable
     }
 
-    // Clear filtered data but preserve sensor count
+    document.querySelectorAll('.factory-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.factory === factory);
+    });
+
+    const selector = document.querySelector('.factory-selector');
+    const activeBtn = document.querySelector(`.factory-btn[data-factory="${factory}"]`);
+    if (selector) selector.classList.add('loading');
+    if (activeBtn) activeBtn.classList.add('loading');
+
     state.messages = [];
-    // Don't clear uniqueTopics - keep cumulative sensor count
     state.enterpriseCounts = { 'Enterprise A': 0, 'Enterprise B': 0, 'Enterprise C': 0 };
 
-    // Reset charts
     if (window.healthChart) {
         window.healthChart.data.datasets[0].data = [0, 0, 0];
         window.healthChart.update();
     }
 
-    // Refresh all data for selected enterprise
-    refreshAllData();
+    refreshAllData().finally(() => {
+        if (selector) selector.classList.remove('loading');
+        if (activeBtn) activeBtn.classList.remove('loading');
+    });
 
-    // Update metrics display
     updateMetrics();
-
     console.log('Filtering by factory:', factory);
 }
 
 // Refresh all data cards with current filter
-function refreshAllData() {
-    fetchOEE();
-    fetchOEEBreakdown();
-    fetchFactoryStatus();
-    fetchWasteTrends();
-    fetchScrapByLine();
-    fetchQualityMetrics();
-    fetchEquipmentStates();
-    fetchLineOEE();
+async function refreshAllData() {
+    refreshAbortController = new AbortController();
+    const signal = refreshAbortController.signal;
+
+    await Promise.allSettled([
+        fetchOEE(signal),
+        fetchOEEBreakdown(signal),
+        fetchFactoryStatus(signal),
+        fetchWasteTrends(signal),
+        fetchScrapByLine(signal),
+        fetchQualityMetrics(signal),
+        fetchEquipmentStates(signal),
+        fetchLineOEE(signal)
+    ]);
 }
 
 // Fetch OEE from API (24h average)
-async function fetchOEE() {
+async function fetchOEE(signal) {
     try {
         const enterprise = getEnterpriseParam();
-        const response = await fetch(`/api/oee?enterprise=${encodeURIComponent(enterprise)}`);
+        const response = await fetch(`/api/oee?enterprise=${encodeURIComponent(enterprise)}`, { signal });
         const data = await response.json();
 
         const oeeScore = document.getElementById('oee-score');
@@ -1324,6 +1351,7 @@ async function fetchOEE() {
             updateOEEGauge(0);
         }
     } catch (error) {
+        if (error.name === 'AbortError') return; // Expected when user changes filter
         console.error('Failed to fetch OEE:', error);
         document.getElementById('oee-status').textContent = 'API error';
         updateOEEGauge(0);
@@ -1424,22 +1452,31 @@ function openAnomalyModal(anomaly) {
     if (reasoningEl) {
         if (anomaly.reasoning) {
             // Build detailed reasoning display
-            let reasoningHtml = `<div class="reasoning-text">${anomaly.reasoning}</div>`;
+            let reasoningHtml = `<div class="reasoning-text">${escapeHtml(anomaly.reasoning)}</div>`;
 
             // Add metric details if available
             if (anomaly.metric || anomaly.actual_value || anomaly.threshold) {
                 reasoningHtml += '<div class="reasoning-details">';
                 if (anomaly.enterprise) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Enterprise:</span> ${anomaly.enterprise}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Enterprise:</span> ${escapeHtml(anomaly.enterprise)}</div>`;
+                }
+                if (anomaly.site) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Site:</span> ${escapeHtml(anomaly.site)}</div>`;
+                }
+                if (anomaly.area) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Area:</span> ${escapeHtml(anomaly.area)}</div>`;
+                }
+                if (anomaly.machine) {
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Machine:</span> ${escapeHtml(anomaly.machine)}</div>`;
                 }
                 if (anomaly.metric) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Metric:</span> ${anomaly.metric}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Metric:</span> ${escapeHtml(anomaly.metric)}</div>`;
                 }
                 if (anomaly.actual_value) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Actual Value:</span> ${anomaly.actual_value}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Actual Value:</span> ${escapeHtml(String(anomaly.actual_value))}</div>`;
                 }
                 if (anomaly.threshold) {
-                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Threshold:</span> ${anomaly.threshold}</div>`;
+                    reasoningHtml += `<div class="reasoning-item"><span class="reasoning-label">Threshold:</span> ${escapeHtml(String(anomaly.threshold))}</div>`;
                 }
                 reasoningHtml += '</div>';
             }
@@ -1562,6 +1599,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Escape') {
             closeAnomalyModal();
             closeSettingsModal();
+            closeAgentModal();
         }
     });
 
@@ -1575,24 +1613,20 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
-function filterInsights(filterType, clickedTab) {
-    state.insightFilter = filterType;
-
+// Shared filter logic for insights (used by both main panel and modal)
+function applyInsightFilter(filterType, containerEl, tabSelector, onAnomalyClick) {
     // Update tab styling
-    document.querySelectorAll('.insight-tab').forEach(tab => {
+    document.querySelectorAll(tabSelector).forEach(tab => {
         tab.classList.remove('active');
     });
-    if (clickedTab) clickedTab.classList.add('active');
 
-    // Re-render insights
-    const container = document.getElementById('claude-insights-container');
-    if (!container) return;
-    container.innerHTML = '';
+    // Clear content
+    containerEl.innerHTML = '';
 
     if (filterType === 'anomalies') {
         // Show only anomalies
         if (state.anomalies.length === 0) {
-            container.innerHTML = `
+            containerEl.innerHTML = `
                 <div class="agent-insights">
                     <div class="insight-text">No anomalies detected yet.</div>
                     <div class="insight-meta">Claude analyzes trends every 30 seconds</div>
@@ -1608,26 +1642,40 @@ function filterInsights(filterType, clickedTab) {
 
                 el.innerHTML = `
                     <div>${escapedText}</div>
-                    <div class="anomaly-time">${new Date(anomaly.timestamp).toLocaleTimeString()}</div>
+                    <div class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleTimeString() : ''}</div>
                 `;
-                // Add click handler to open modal with static anomaly snapshot
-                el.addEventListener('click', () => openAnomalyModal(anomaly));
-                container.appendChild(el);
+                // Add click handler
+                el.addEventListener('click', () => onAnomalyClick(anomaly));
+                containerEl.appendChild(el);
             });
         }
     } else {
         // Show all insights
         if (state.insights.length === 0) {
-            container.innerHTML = `
+            containerEl.innerHTML = `
                 <div class="agent-insights">
                     <div class="insight-text">Waiting for data to analyze...</div>
                     <div class="insight-meta">Status: Standby</div>
                 </div>
             `;
         } else {
-            state.insights.forEach(insight => addClaudeInsight(insight));
+            state.insights.forEach(insight => {
+                const insightEl = createInsightElement(insight);
+                containerEl.appendChild(insightEl);
+            });
         }
     }
+}
+
+function filterInsights(filterType, clickedTab) {
+    state.insightFilter = filterType;
+
+    if (clickedTab) clickedTab.classList.add('active');
+
+    const container = document.getElementById('claude-insights-container');
+    if (!container) return;
+
+    applyInsightFilter(filterType, container, '.insight-tabs .insight-tab', openAnomalyModal);
 }
 
 // Add anomaly filter
@@ -1690,7 +1738,7 @@ function renderActiveFilters() {
 
     container.innerHTML = state.anomalyFilters.map((filter, index) => `
         <div class="filter-chip">
-            <span class="filter-chip-text" title="${filter}">${filter}</span>
+            <span class="filter-chip-text" title="${escapeHtml(filter)}">${escapeHtml(filter)}</span>
             <span class="filter-chip-remove" onclick="removeAnomalyFilter(${index})">×</span>
         </div>
     `).join('');
@@ -1757,6 +1805,19 @@ function toggleStreamPause() {
 // Initialize connection on page load
 window.addEventListener('load', () => {
     console.log('🚀 Initializing EdgeMind...');
+
+    // Restore saved factory selection from localStorage
+    try {
+        const savedFactory = localStorage.getItem('edgemind_selectedFactory');
+        if (savedFactory && ['ALL', 'A', 'B', 'C'].includes(savedFactory)) {
+            state.selectedFactory = savedFactory;
+            document.querySelectorAll('.factory-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.factory === savedFactory);
+            });
+        }
+    } catch (e) {
+        // localStorage unavailable (private browsing, etc.)
+    }
 
     // Initialize charts first
     initializeCharts();
@@ -1933,4 +1994,89 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    // Setup agent modal event listeners
+    const agentModalOverlay = document.getElementById('agent-modal-overlay');
+    if (agentModalOverlay) {
+        // Close on backdrop click
+        agentModalOverlay.addEventListener('click', function(e) {
+            if (e.target === agentModalOverlay) {
+                closeAgentModal();
+            }
+        });
+    }
+
+    // Setup factory button event delegation
+    const factorySelector = document.querySelector('.factory-selector');
+    if (factorySelector) {
+        factorySelector.addEventListener('click', (e) => {
+            const btn = e.target.closest('.factory-btn');
+            if (btn && !btn.classList.contains('loading')) {
+                const factory = btn.dataset.factory;
+                if (factory) selectFactory(factory);
+            }
+        });
+    }
 });
+
+// Agent Modal Functions
+function openAgentModal() {
+    const overlay = document.getElementById('agent-modal-overlay');
+    const content = document.getElementById('agent-modal-content');
+    const countSpan = document.getElementById('modal-anomaly-count');
+
+    if (!overlay || !content) return;
+
+    // Copy current insights to modal (last 20 insights)
+    const insights = state.insights.slice(-20);
+    content.innerHTML = '';
+
+    if (insights.length === 0) {
+        content.innerHTML = `
+            <div class="agent-insights">
+                <div class="insight-text">Waiting for data to analyze. Claude will provide real-time insights as factory data flows in...</div>
+                <div class="insight-meta">Status: Standby • Waiting for MQTT messages</div>
+            </div>
+        `;
+    } else {
+        insights.forEach(insight => {
+            renderModalInsight(insight, content);
+        });
+    }
+
+    // Update anomaly count
+    if (countSpan) {
+        countSpan.textContent = state.anomalies.length;
+    }
+
+    overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeAgentModal() {
+    const overlay = document.getElementById('agent-modal-overlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+}
+
+function renderModalInsight(insight, container) {
+    const insightEl = createInsightElement(insight);
+    container.appendChild(insightEl);
+}
+
+function filterModalInsights(filterType, clickedTab) {
+    const content = document.getElementById('agent-modal-content');
+    if (!content) return;
+
+    if (clickedTab) clickedTab.classList.add('active');
+
+    // Use shared filter logic with modal-specific anomaly handler
+    const onModalAnomalyClick = (anomaly) => {
+        closeAgentModal();
+        openAnomalyModal(anomaly);
+    };
+
+    applyInsightFilter(filterType, content, '.agent-modal-tabs .insight-tab', onModalAnomalyClick);
+}

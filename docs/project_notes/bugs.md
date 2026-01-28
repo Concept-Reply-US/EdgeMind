@@ -207,4 +207,49 @@ This file tracks bugs encountered and their solutions for future reference.
   - Use InfluxDB `pivot()` to get related measurements in single query
   - Commit: `4ff3dbd`
 
+### 2026-01-28 - OEE Value Inconsistency (72% vs 10.6%)
+- **Issue**: Same enterprise returned wildly different OEE values between consecutive AI trend analysis runs: 72% vs 10.6%
+- **Root Cause**: Value format detection used cached `sampleValues` from schema discovery to determine if data was decimal (0.72 = 72%) or percentage (72 = 72%). The threshold of 1.5 was problematic:
+  - If discovery saw values `[0.72, 0.85]` -> detected as `decimal` -> multiplied by 100 -> 72%
+  - If discovery saw values `[10.6, 13.8]` -> detected as `percentage` (>1.5) -> NOT multiplied -> 10.6%
+  - The `oeeConfig.enterprises` singleton cached the first detection, but schema refresh could change sample values while keeping stale valueFormat
+- **Solution**: Changed normalization to detect format from **actual queried values** at runtime, not cached config:
+  ```javascript
+  // ROBUST NORMALIZATION: Detect format from actual value, not cached config
+  // Values <= 1.5 are decimal (0.72 = 72%), values > 1.5 are already percentages
+  const actualFormat = (oeeValue !== null && oeeValue <= 1.5) ? 'decimal' : 'percentage';
+  if (oeeValue !== null && actualFormat === 'decimal') {
+    oeeValue = oeeValue * 100;
+  }
+  ```
+  Added comprehensive logging with request IDs to track tier, raw values, and normalization decisions.
+- **Prevention**:
+  - Always normalize OEE values based on the actual queried value, not cached metadata
+  - Add logging with unique request IDs to trace calculation paths in production
+  - Files affected: `lib/oee/index.js`
+
+### 2026-01-28 - InfluxDB Flux Query Missing group() Before mean()
+- **Issue**: Enterprise B OEE showed 10.6% with 13.8% performance, but `/api/trends` showed 70.6% OEE and 87.9% performance for the same data
+- **Root Cause**: Flux queries in `lib/oee/index.js` calculated `|> mean()` without first using `|> group()` to consolidate all time series. InfluxDB returns one row per unique tag combination (site × area × machine), and the JavaScript code looped through results overwriting the value on each iteration - keeping only the **last row's value** instead of the enterprise-wide average.
+  ```flux
+  // WRONG - returns multiple rows, JS keeps last one only
+  |> filter(fn: (r) => r._value > 0)
+  |> mean()
+
+  // CORRECT - consolidates all series before averaging
+  |> filter(fn: (r) => r._value > 0)
+  |> group()
+  |> mean()
+  ```
+- **Solution**: Added `|> group()` before `|> mean()` in three locations:
+  1. Tier 1 overall OEE query (~line 191)
+  2. Tier 1 component queries (~line 246)
+  3. Tier 2 component queries (~line 324)
+- **Prevention**:
+  - **ALWAYS use `|> group()` before `|> mean()` when you need a single aggregate value across multiple tag combinations**
+  - InfluxDB groups by tags by default - each unique tag combination creates a separate series
+  - Without `group()`, aggregate functions operate per-series and return multiple rows
+  - This is an InfluxDB/Flux gotcha that's easy to miss and produces subtly wrong results
+- **Files affected**: `lib/oee/index.js`
+
 <!-- Add new bugs above this line -->
