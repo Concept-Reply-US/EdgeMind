@@ -1638,6 +1638,12 @@ app.get('/api/batch/status', async (req, res) => {
       'TFF300': { name: 'Tangential Flow Filtration 300', type: 'filtration' }
     };
 
+    // Map alternate measurement name patterns to canonical equipment IDs
+    const equipmentAliases = {
+      'UNIT_250': 'SUB250',
+      'UNIT_500': 'SUM500'
+    };
+
     // Collect measurement data by equipment
     const equipmentData = new Map();
 
@@ -1649,10 +1655,22 @@ app.get('/api/batch/status', async (req, res) => {
 
           // Extract equipment ID from measurement name
           let equipmentId = null;
+
+          // First check for direct matches
           for (const id of Object.keys(equipmentMetadata)) {
             if (o._measurement.includes(id) || o._measurement.includes(id.toLowerCase())) {
               equipmentId = id;
               break;
+            }
+          }
+
+          // Check for alias patterns (e.g., sub_UNIT_250_STATE → SUB250)
+          if (!equipmentId) {
+            for (const [alias, canonical] of Object.entries(equipmentAliases)) {
+              if (o._measurement.includes(alias) || o._measurement.includes(alias.toLowerCase())) {
+                equipmentId = canonical;
+                break;
+              }
             }
           }
 
@@ -1701,7 +1719,8 @@ app.get('/api/batch/status', async (req, res) => {
 
     for (const [id, data] of equipmentData.entries()) {
       const metadata = equipmentMetadata[id];
-      const state = data.measurements.state || 'Unknown';
+      // Use state if available, fall back to phase (TFF300 has no STATE, only PHASE)
+      const state = data.measurements.state || data.measurements.phase || 'Unknown';
 
       // Normalize state for summary
       const stateLower = state.toString().toLowerCase();
