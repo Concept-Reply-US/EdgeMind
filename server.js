@@ -1809,7 +1809,13 @@ app.get('/api/batch/status', async (req, res) => {
     let zonesWithIssues = 0;
 
     for (const [machineName, data] of cleanroomData.entries()) {
-      const { temperature, humidity, pm25, fanStatus } = data.metrics;
+      let { temperature, humidity, pm25, fanStatus } = data.metrics;
+
+      // Convert Fahrenheit to Celsius if temperature appears to be in °F (above 50)
+      // Cleanroom temp should be 18-25°C (64-77°F)
+      if (typeof temperature === 'number' && !isNaN(temperature) && temperature > 50) {
+        temperature = (temperature - 32) * 5 / 9;
+      }
 
       // Determine zone status based on thresholds
       let status = 'Good';
