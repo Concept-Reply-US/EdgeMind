@@ -40,6 +40,7 @@ const {
   queryOEEBreakdown,
   queryFactoryStatus
 } = require('./lib/oee');
+const { getEquipmentMetadata, EQUIPMENT_ALIASES, resolveEquipmentId } = require('./lib/equipment');
 
 // Initialize services
 const app = express();
@@ -1613,6 +1614,10 @@ function parseJsonValue(rawValue) {
  */
 app.get('/api/batch/status', async (req, res) => {
   try {
+    // Dynamically discover equipment from hierarchy cache
+    const equipmentMetadata = await getEquipmentMetadata('Enterprise C');
+    const knownEquipment = Object.keys(equipmentMetadata);
+
     // Query InfluxDB for latest batch equipment states
     const fluxQuery = `
       from(bucket: "${CONFIG.influxdb.bucket}")
@@ -1630,20 +1635,6 @@ app.get('/api/batch/status', async (req, res) => {
         |> last()
     `;
 
-    // Equipment metadata mapping
-    const equipmentMetadata = {
-      'CHR01': { name: 'Chromatography Unit', type: 'chromatography' },
-      'SUB250': { name: 'Single-Use Bioreactor 250L', type: 'bioreactor' },
-      'SUM500': { name: 'Single-Use Mixer 500L', type: 'mixer' },
-      'TFF300': { name: 'Tangential Flow Filtration 300', type: 'filtration' }
-    };
-
-    // Map alternate measurement name patterns to canonical equipment IDs
-    const equipmentAliases = {
-      'UNIT_250': 'SUB250',
-      'UNIT_500': 'SUM500'
-    };
-
     // Collect measurement data by equipment
     const equipmentData = new Map();
 
@@ -1653,28 +1644,9 @@ app.get('/api/batch/status', async (req, res) => {
           const o = tableMeta.toObject(row);
           if (!o._measurement || !o._value) return;
 
-          // Extract equipment ID from measurement name
-          let equipmentId = null;
-
-          // First check for direct matches
-          for (const id of Object.keys(equipmentMetadata)) {
-            if (o._measurement.includes(id) || o._measurement.includes(id.toLowerCase())) {
-              equipmentId = id;
-              break;
-            }
-          }
-
-          // Check for alias patterns (e.g., sub_UNIT_250_STATE → SUB250)
-          if (!equipmentId) {
-            for (const [alias, canonical] of Object.entries(equipmentAliases)) {
-              if (o._measurement.includes(alias) || o._measurement.includes(alias.toLowerCase())) {
-                equipmentId = canonical;
-                break;
-              }
-            }
-          }
-
-          if (!equipmentId) return;
+          // Resolve equipment ID from measurement name using aliases
+          const equipmentId = resolveEquipmentId(o._measurement, knownEquipment);
+          if (!equipmentId || !equipmentMetadata[equipmentId]) return;
 
           // Initialize equipment entry if needed
           if (!equipmentData.has(equipmentId)) {
