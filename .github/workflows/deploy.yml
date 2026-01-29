@@ -2,7 +2,7 @@ name: Deploy EdgeMind to EC2
 
 on:
   push:
-    branches: [dev]
+    branches: [dev, feature/persona-navbar]
     paths:
       - 'server.js'
       - 'lib/**'
