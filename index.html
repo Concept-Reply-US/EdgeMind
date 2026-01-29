@@ -86,7 +86,6 @@
             <button class="sub-nav__item active" data-view="demo-scenarios">Scenario Selector</button>
             <button class="sub-nav__item" data-view="demo-inject">Inject Anomaly</button>
             <button class="sub-nav__item" data-view="demo-reset">Reset Data</button>
-            <button class="sub-nav__item" data-view="demo-timer">Timer</button>
         </div>
     </div>
 
@@ -428,36 +427,186 @@
         </div>
 
         <div class="persona-view" data-view="demo-scenarios">
-            <div class="placeholder-view">
-                <div class="placeholder-view__icon">🎬</div>
-                <div class="placeholder-view__title">Scenario Selector</div>
-                <div class="placeholder-view__subtitle">Pre-configured demo scenarios</div>
+            <div class="demo-scenarios-container">
+                <div class="demo-header">
+                    <h2 class="demo-title">Scenario Selector</h2>
+                    <p class="demo-subtitle">Pre-configured demo scenarios for ProveIt! Conference 2026</p>
+                </div>
+                <div class="scenario-grid" id="scenario-grid">
+                    <!-- Scenarios loaded dynamically -->
+                    <div class="scenario-loading">Loading scenarios...</div>
+                </div>
             </div>
         </div>
 
         <div class="persona-view" data-view="demo-inject">
-            <div class="placeholder-view">
-                <div class="placeholder-view__icon">💉</div>
-                <div class="placeholder-view__title">Inject Anomaly</div>
-                <div class="placeholder-view__subtitle">Manual anomaly injection controls</div>
+            <div class="demo-inject-container">
+                <div class="demo-header">
+                    <h2 class="demo-title">Inject Anomaly</h2>
+                    <p class="demo-subtitle">Manual anomaly injection for live demonstrations</p>
+                </div>
+
+                <div class="inject-panel card">
+                    <div class="card-title">Injection Controls</div>
+                    <div class="inject-form">
+                        <div class="inject-field">
+                            <label class="inject-label">Equipment</label>
+                            <input type="text"
+                                   id="inject-equipment"
+                                   class="inject-input"
+                                   placeholder="e.g., filler, vat01, caploader, washer"
+                                   list="equipment-suggestions">
+                            <datalist id="equipment-suggestions">
+                                <option value="filler">
+                                <option value="vat01">
+                                <option value="caploader">
+                                <option value="washer">
+                            </datalist>
+                        </div>
+
+                        <div class="inject-field">
+                            <label class="inject-label">Anomaly Type</label>
+                            <div class="inject-radio-group" id="inject-anomaly-types">
+                                <!-- Populated dynamically from /api/demo/profiles -->
+                            </div>
+                        </div>
+
+                        <div class="inject-field">
+                            <label class="inject-label">Severity</label>
+                            <div class="severity-slider-container">
+                                <input type="range"
+                                       id="inject-severity"
+                                       class="severity-slider"
+                                       min="1" max="3" step="1" value="2">
+                                <div class="severity-labels">
+                                    <span>Mild</span>
+                                    <span>Moderate</span>
+                                    <span>Severe</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="inject-field">
+                            <label class="inject-label">Duration (seconds)</label>
+                            <div class="duration-slider-container">
+                                <input type="range"
+                                       id="inject-duration"
+                                       class="duration-slider"
+                                       min="30" max="300" step="30" value="120">
+                                <div class="duration-value"><span id="inject-duration-value">120</span>s</div>
+                            </div>
+                        </div>
+
+                        <button class="inject-btn" id="inject-start-btn">
+                            INJECT ANOMALY
+                        </button>
+
+                        <div class="inject-status">
+                            <span class="inject-status-label">Max Concurrent:</span>
+                            <span id="inject-concurrent-count">0</span> / <span id="inject-concurrent-max">3</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="active-injections-panel card">
+                    <div class="card-title">Active Injections</div>
+                    <div id="active-injections-list">
+                        <div class="no-injections">No active injections</div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <div class="persona-view" data-view="demo-reset">
-            <div class="placeholder-view">
-                <div class="placeholder-view__icon">🔄</div>
-                <div class="placeholder-view__title">Reset Data</div>
-                <div class="placeholder-view__subtitle">Clear all factory data and metrics</div>
+            <div class="demo-reset-container">
+                <div class="demo-header">
+                    <h2 class="demo-title">Reset & Timer</h2>
+                    <p class="demo-subtitle">Data reset controls and presentation timer</p>
+                </div>
+
+                <div class="reset-panel card">
+                    <div class="card-title">Reset Controls</div>
+                    <div class="reset-options">
+                        <div class="reset-option">
+                            <div class="reset-option-header">
+                                <div class="reset-option-title">Reset Injected Data</div>
+                                <button class="reset-btn reset-btn-primary" onclick="demoResetData('injected-data')">
+                                    RESET INJECTIONS
+                                </button>
+                            </div>
+                            <div class="reset-option-desc">
+                                Clears demo-injected InfluxDB data points only. Stops all active injections. Factory baseline data remains intact.
+                            </div>
+                        </div>
+
+                        <div class="reset-option">
+                            <div class="reset-option-header">
+                                <div class="reset-option-title">Reset All Scenarios</div>
+                                <button class="reset-btn reset-btn-warning" onclick="demoResetData('all-scenarios')">
+                                    RESET SCENARIOS
+                                </button>
+                            </div>
+                            <div class="reset-option-desc">
+                                Stops all running scenarios and clears scenario-generated data. Use this between different scenario demos.
+                            </div>
+                        </div>
+
+                        <div class="reset-option">
+                            <div class="reset-option-header">
+                                <div class="reset-option-title">Full Reset</div>
+                                <button class="reset-btn reset-btn-danger" onclick="demoResetData('full')">
+                                    FULL RESET
+                                </button>
+                            </div>
+                            <div class="reset-option-desc">
+                                Nuclear option. Stops all scenarios and injections, clears all demo data. Use this for a clean slate between presentations.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="timer-panel card">
+                    <div class="card-title">Presentation Timer</div>
+                    <div class="timer-display">
+                        <div class="timer-value" id="timer-display">00:00</div>
+                        <div class="timer-status" id="timer-status">Ready</div>
+                    </div>
+
+                    <div class="timer-presets">
+                        <button class="timer-preset-btn" onclick="setTimerPreset(300)">5 min</button>
+                        <button class="timer-preset-btn" onclick="setTimerPreset(600)">10 min</button>
+                        <button class="timer-preset-btn" onclick="setTimerPreset(900)">15 min</button>
+                        <button class="timer-preset-btn" onclick="setTimerPreset(1200)">20 min</button>
+                        <input type="number"
+                               id="timer-custom-input"
+                               class="timer-custom-input"
+                               placeholder="Custom (min)"
+                               min="1" max="120">
+                        <button class="timer-preset-btn" onclick="setTimerCustom()">Set</button>
+                    </div>
+
+                    <div class="timer-controls">
+                        <button class="timer-control-btn timer-start" id="timer-start-btn" onclick="startTimer()">
+                            START
+                        </button>
+                        <button class="timer-control-btn timer-pause" id="timer-pause-btn" onclick="pauseTimer()" disabled>
+                            PAUSE
+                        </button>
+                        <button class="timer-control-btn timer-reset" id="timer-reset-btn" onclick="resetTimer()">
+                            RESET
+                        </button>
+                    </div>
+
+                    <div class="timer-options">
+                        <label class="timer-option-checkbox">
+                            <input type="checkbox" id="timer-audio-enabled">
+                            <span>Audio alert at 0:00</span>
+                        </label>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <div class="persona-view" data-view="demo-timer">
-            <div class="placeholder-view">
-                <div class="placeholder-view__icon">⏱️</div>
-                <div class="placeholder-view__title">Presentation Timer</div>
-                <div class="placeholder-view__subtitle">Demo timing and countdown controls</div>
-            </div>
-        </div>
     </div><!-- End .content -->
 
     <!-- Footer -->

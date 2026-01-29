@@ -66,6 +66,20 @@ function switchPersona(key) {
 function switchPersonaView(viewKey) {
     personaState.activeView = viewKey;
 
+    // Clean up demo intervals when leaving demo views
+    if (!viewKey.startsWith('demo-')) {
+        if (typeof demoState !== 'undefined') {
+            if (demoState.scenarioStatusInterval) {
+                clearInterval(demoState.scenarioStatusInterval);
+                demoState.scenarioStatusInterval = null;
+            }
+            if (demoState.injectionStatusInterval) {
+                clearInterval(demoState.injectionStatusInterval);
+                demoState.injectionStatusInterval = null;
+            }
+        }
+    }
+
     // Update active sub-nav item
     const activePanel = document.querySelector(`.sub-nav__panel[data-panel="${personaState.activePersona}"]`);
     if (activePanel) {
@@ -2606,3 +2620,675 @@ if (cardModalOverlay) {
         }
     });
 }
+
+// ========== DEMO CONTROL FUNCTIONALITY ==========
+
+// Demo Control State
+const demoState = {
+    scenarios: [],
+    profiles: [],
+    activeScenario: null,
+    activeInjections: [],
+    scenarioStatusInterval: null,
+    injectionStatusInterval: null,
+    timerSeconds: 0,
+    timerInterval: null,
+    timerRunning: false,
+    timerWarningThreshold: 120 // 2 minutes
+};
+
+// Initialize Demo Control views when switching to them
+document.addEventListener('DOMContentLoaded', () => {
+    // Watch for persona view changes to initialize demo views
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                const target = mutation.target;
+                if (target.classList.contains('persona-view') && target.classList.contains('active')) {
+                    const view = target.dataset.view;
+                    if (view === 'demo-scenarios') {
+                        initDemoScenarios();
+                    } else if (view === 'demo-inject') {
+                        initDemoInject();
+                    } else if (view === 'demo-reset') {
+                        // Reset/timer view is static, no init needed
+                    }
+                }
+            }
+        });
+    });
+
+    document.querySelectorAll('.persona-view').forEach(view => {
+        observer.observe(view, { attributes: true });
+    });
+});
+
+// ===== SCENARIO SELECTOR =====
+
+async function initDemoScenarios() {
+    try {
+        // Clean up injection polling when switching to scenarios
+        if (demoState.injectionStatusInterval) {
+            clearInterval(demoState.injectionStatusInterval);
+            demoState.injectionStatusInterval = null;
+        }
+
+        // Fetch scenarios list
+        const response = await fetch('/api/demo/scenarios');
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        demoState.scenarios = data.scenarios;
+
+        renderScenarios();
+
+        // Start polling for scenario status
+        if (demoState.scenarioStatusInterval) {
+            clearInterval(demoState.scenarioStatusInterval);
+        }
+        demoState.scenarioStatusInterval = setInterval(updateScenarioStatus, 2000);
+        updateScenarioStatus(); // Initial update
+
+    } catch (error) {
+        console.error('Failed to load scenarios:', error);
+        document.getElementById('scenario-grid').innerHTML = `
+            <div class="scenario-loading" style="color: var(--accent-red);">
+                Failed to load scenarios: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function renderScenarios() {
+    const grid = document.getElementById('scenario-grid');
+    if (!grid) return;
+
+    if (demoState.scenarios.length === 0) {
+        grid.innerHTML = '<div class="scenario-loading">No scenarios available</div>';
+        return;
+    }
+
+    grid.innerHTML = demoState.scenarios.map(scenario => `
+        <div class="scenario-card" data-scenario-id="${escapeHtml(scenario.id)}">
+            <div class="scenario-card-header">
+                <div class="scenario-name">${escapeHtml(scenario.name)}</div>
+                <div class="scenario-duration-badge">${escapeHtml(String(scenario.durationMinutes))} min</div>
+            </div>
+            <div class="scenario-description">${escapeHtml(scenario.description)}</div>
+            <div class="scenario-equipment">Equipment: ${escapeHtml(scenario.equipment)}</div>
+
+            <div class="scenario-progress" id="progress-${escapeHtml(scenario.id)}" style="display: none;">
+                <div class="scenario-progress-bar">
+                    <div class="scenario-progress-fill" id="progress-fill-${escapeHtml(scenario.id)}" style="width: 0%"></div>
+                </div>
+                <div class="scenario-progress-text">
+                    <span id="progress-elapsed-${escapeHtml(scenario.id)}">0:00</span>
+                    <span id="progress-remaining-${escapeHtml(scenario.id)}">0:00</span>
+                </div>
+                <div class="scenario-current-step" id="current-step-${escapeHtml(scenario.id)}"></div>
+            </div>
+
+            <button class="scenario-btn" id="launch-btn-${escapeHtml(scenario.id)}" onclick="launchScenario('${escapeHtml(scenario.id)}')">
+                LAUNCH SCENARIO
+            </button>
+            <button class="scenario-btn scenario-btn-stop" id="stop-btn-${escapeHtml(scenario.id)}" style="display: none;" onclick="stopScenario()">
+                STOP SCENARIO
+            </button>
+        </div>
+    `).join('');
+}
+
+async function updateScenarioStatus() {
+    try {
+        const response = await fetch('/api/demo/scenario/status');
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        const status = await response.json();
+
+        demoState.activeScenario = status.active ? status : null;
+
+        // Update each scenario card
+        demoState.scenarios.forEach(scenario => {
+            const isActive = status.active && status.scenario.id === scenario.id;
+            const launchBtn = document.getElementById(`launch-btn-${scenario.id}`);
+            const stopBtn = document.getElementById(`stop-btn-${scenario.id}`);
+            const progressDiv = document.getElementById(`progress-${scenario.id}`);
+
+            if (isActive) {
+                // Show progress for active scenario
+                if (progressDiv) progressDiv.style.display = 'block';
+                if (launchBtn) launchBtn.style.display = 'none';
+                if (stopBtn) stopBtn.style.display = 'block';
+
+                // Update progress bar
+                const progressFill = document.getElementById(`progress-fill-${scenario.id}`);
+                if (progressFill) progressFill.style.width = `${status.timing.progress}%`;
+
+                // Update time displays
+                const elapsedEl = document.getElementById(`progress-elapsed-${scenario.id}`);
+                const remainingEl = document.getElementById(`progress-remaining-${scenario.id}`);
+                if (elapsedEl) elapsedEl.textContent = formatMs(status.timing.elapsedMs);
+                if (remainingEl) remainingEl.textContent = formatMs(status.timing.remainingMs);
+
+                // Update current step
+                const currentStepEl = document.getElementById(`current-step-${scenario.id}`);
+                if (currentStepEl && status.steps && status.steps.length > 0) {
+                    const activeSteps = status.steps.filter(s => s.elapsedMs < 999999);
+                    if (activeSteps.length > 0) {
+                        currentStepEl.textContent = `Step ${activeSteps.length}/${status.steps.length}: ${activeSteps[0].topic.split('/').pop()}`;
+                    }
+                }
+            } else {
+                // Hide progress, show launch button
+                if (progressDiv) progressDiv.style.display = 'none';
+                if (stopBtn) stopBtn.style.display = 'none';
+                if (launchBtn) {
+                    launchBtn.style.display = 'block';
+                    launchBtn.disabled = status.active; // Disable if another scenario is running
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error('Failed to update scenario status:', error);
+    }
+}
+
+async function launchScenario(scenarioId) {
+    const btn = document.getElementById(`launch-btn-${scenarioId}`);
+    try {
+        if (btn) btn.disabled = true;
+
+        const response = await fetch('/api/demo/scenario/launch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scenarioId })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to launch scenario');
+        }
+
+        console.log('Scenario launched:', data);
+        updateScenarioStatus(); // Immediate update
+
+    } catch (error) {
+        console.error('Failed to launch scenario:', error);
+        alert(`Failed to launch scenario: ${error.message}`);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+async function stopScenario() {
+    // Find the active stop button
+    const stopBtn = document.querySelector('.scenario-btn-stop[style*="display: block"]');
+    try {
+        if (stopBtn) stopBtn.disabled = true;
+
+        const response = await fetch('/api/demo/scenario/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to stop scenario');
+        }
+
+        console.log('Scenario stopped:', data);
+        updateScenarioStatus(); // Immediate update
+
+    } catch (error) {
+        console.error('Failed to stop scenario:', error);
+        alert(`Failed to stop scenario: ${error.message}`);
+    } finally {
+        if (stopBtn) stopBtn.disabled = false;
+    }
+}
+
+// ===== INJECT ANOMALY =====
+
+async function initDemoInject() {
+    try {
+        // Clean up scenario polling when switching to inject
+        if (demoState.scenarioStatusInterval) {
+            clearInterval(demoState.scenarioStatusInterval);
+            demoState.scenarioStatusInterval = null;
+        }
+
+        // Fetch anomaly profiles
+        const response = await fetch('/api/demo/profiles');
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        demoState.profiles = data.profiles;
+
+        renderAnomalyTypes();
+        setupInjectControls();
+
+        // Start polling for injection status
+        if (demoState.injectionStatusInterval) {
+            clearInterval(demoState.injectionStatusInterval);
+        }
+        demoState.injectionStatusInterval = setInterval(updateInjectionStatus, 2000);
+        updateInjectionStatus(); // Initial update
+
+    } catch (error) {
+        console.error('Failed to load injection profiles:', error);
+        document.getElementById('inject-anomaly-types').innerHTML = `
+            <div style="color: var(--accent-red); padding: 10px;">
+                Failed to load profiles: ${error.message}
+            </div>
+        `;
+    }
+}
+
+function renderAnomalyTypes() {
+    const container = document.getElementById('inject-anomaly-types');
+    if (!container) return;
+
+    container.innerHTML = demoState.profiles.map(profile => `
+        <div class="inject-radio-option">
+            <input type="radio" name="anomaly-type" id="type-${profile.type}" value="${profile.type}">
+            <label class="inject-radio-label" for="type-${profile.type}">
+                ${profile.type}
+                <div style="font-size: 0.75rem; opacity: 0.7; margin-top: 4px;">${profile.unit}</div>
+            </label>
+        </div>
+    `).join('');
+
+    // Select first option by default
+    if (demoState.profiles.length > 0) {
+        document.getElementById(`type-${demoState.profiles[0].type}`).checked = true;
+    }
+}
+
+function setupInjectControls() {
+    // Duration slider value display
+    const durationSlider = document.getElementById('inject-duration');
+    const durationValue = document.getElementById('inject-duration-value');
+    if (durationSlider && durationValue) {
+        // Use assignment to avoid duplicate listeners
+        durationSlider.oninput = (e) => {
+            durationValue.textContent = e.target.value;
+        };
+    }
+
+    // Inject button
+    const injectBtn = document.getElementById('inject-start-btn');
+    if (injectBtn) {
+        // Use assignment to avoid duplicate listeners
+        injectBtn.onclick = startInjection;
+    }
+}
+
+async function startInjection() {
+    const injectBtn = document.getElementById('inject-start-btn');
+    try {
+        if (injectBtn) injectBtn.disabled = true;
+
+        // Gather form values
+        const equipment = document.getElementById('inject-equipment').value.trim();
+        const anomalyTypeRadio = document.querySelector('input[name="anomaly-type"]:checked');
+        const severitySlider = document.getElementById('inject-severity');
+        const durationSlider = document.getElementById('inject-duration');
+
+        if (!equipment) {
+            alert('Please enter an equipment name (e.g., filler, vat01, caploader, washer)');
+            return;
+        }
+
+        if (!anomalyTypeRadio) {
+            alert('Please select an anomaly type');
+            return;
+        }
+
+        const anomalyType = anomalyTypeRadio.value;
+        const severityMap = { '1': 'mild', '2': 'moderate', '3': 'severe' };
+        const severity = severityMap[severitySlider.value];
+        const durationMs = parseInt(durationSlider.value) * 1000;
+
+        const response = await fetch('/api/demo/inject', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                equipment,
+                anomalyType,
+                severity,
+                durationMs
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to start injection');
+        }
+
+        console.log('Injection started:', data);
+        updateInjectionStatus(); // Immediate update
+
+    } catch (error) {
+        console.error('Failed to start injection:', error);
+        alert(`Failed to start injection: ${error.message}`);
+    } finally {
+        if (injectBtn) injectBtn.disabled = false;
+    }
+}
+
+async function updateInjectionStatus() {
+    try {
+        const response = await fetch('/api/demo/inject/status');
+        if (!response.ok) {
+            throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        }
+        const status = await response.json();
+
+        demoState.activeInjections = status.active;
+
+        // Update concurrent count
+        const countEl = document.getElementById('inject-concurrent-count');
+        const maxEl = document.getElementById('inject-concurrent-max');
+        if (countEl) countEl.textContent = status.count;
+        if (maxEl) maxEl.textContent = status.maxConcurrent;
+
+        // Disable inject button if at max
+        const injectBtn = document.getElementById('inject-start-btn');
+        if (injectBtn) {
+            injectBtn.disabled = status.count >= status.maxConcurrent;
+        }
+
+        // Render active injections list
+        renderActiveInjections(status.active);
+
+    } catch (error) {
+        console.error('Failed to update injection status:', error);
+    }
+}
+
+function renderActiveInjections(injections) {
+    const container = document.getElementById('active-injections-list');
+    if (!container) return;
+
+    if (injections.length === 0) {
+        container.innerHTML = '<div class="no-injections">No active injections</div>';
+        return;
+    }
+
+    container.innerHTML = injections.map(inj => `
+        <div class="injection-item">
+            <div class="injection-header">
+                <div class="injection-title">${escapeHtml(inj.equipment)} - ${escapeHtml(inj.anomalyType)} (${escapeHtml(inj.severity)})</div>
+                <button class="injection-stop-btn" onclick="stopInjection('${escapeHtml(inj.id)}')">STOP</button>
+            </div>
+            <div class="injection-details">
+                <div class="injection-detail">
+                    <strong>Equipment</strong>
+                    ${escapeHtml(inj.equipment)}
+                </div>
+                <div class="injection-detail">
+                    <strong>Type</strong>
+                    ${escapeHtml(inj.anomalyType)}
+                </div>
+                <div class="injection-detail">
+                    <strong>Severity</strong>
+                    ${escapeHtml(inj.severity)}
+                </div>
+                <div class="injection-detail">
+                    <strong>Remaining</strong>
+                    ${formatMs(inj.timing.remainingMs)}
+                </div>
+            </div>
+            <div class="injection-progress-bar">
+                <div class="injection-progress-fill" style="width: ${Math.min(100, Math.max(0, inj.timing.progress))}%"></div>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function stopInjection(injectionId) {
+    // Find the stop button for this injection (in the injection item)
+    const injectionItems = document.querySelectorAll('.injection-item');
+    let stopBtn = null;
+    injectionItems.forEach(item => {
+        const btn = item.querySelector('.injection-stop-btn');
+        if (btn && btn.getAttribute('onclick').includes(injectionId)) {
+            stopBtn = btn;
+        }
+    });
+
+    try {
+        if (stopBtn) stopBtn.disabled = true;
+
+        const response = await fetch('/api/demo/inject/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ injectionId })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to stop injection');
+        }
+
+        console.log('Injection stopped:', data);
+        updateInjectionStatus(); // Immediate update
+
+    } catch (error) {
+        console.error('Failed to stop injection:', error);
+        alert(`Failed to stop injection: ${error.message}`);
+    } finally {
+        if (stopBtn) stopBtn.disabled = false;
+    }
+}
+
+// ===== RESET & TIMER =====
+
+async function demoResetData(type) {
+    const confirmMessages = {
+        'injected-data': 'Reset all injected data? This will stop active injections and clear demo data points.',
+        'all-scenarios': 'Reset all scenarios? This will stop running scenarios and clear scenario data.',
+        'full': 'FULL RESET? This will stop all scenarios and injections, and clear ALL demo data. This cannot be undone!'
+    };
+
+    if (!confirm(confirmMessages[type])) {
+        return;
+    }
+
+    // Find the button that triggered this (by searching for onclick attribute)
+    const resetButtons = document.querySelectorAll('.reset-btn');
+    let triggerBtn = null;
+    resetButtons.forEach(btn => {
+        const onclick = btn.getAttribute('onclick');
+        if (onclick && onclick.includes(`'${type}'`)) {
+            triggerBtn = btn;
+        }
+    });
+
+    try {
+        if (triggerBtn) triggerBtn.disabled = true;
+
+        const response = await fetch('/api/demo/reset', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ type })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to reset data');
+        }
+
+        console.log('Reset completed:', data);
+        alert(`Reset completed successfully:\n${JSON.stringify(data.results, null, 2)}`);
+
+        // Refresh status displays if on demo views
+        if (personaState.activeView === 'demo-scenarios') {
+            updateScenarioStatus();
+        } else if (personaState.activeView === 'demo-inject') {
+            updateInjectionStatus();
+        }
+
+    } catch (error) {
+        console.error('Failed to reset data:', error);
+        alert(`Failed to reset data: ${error.message}`);
+    } finally {
+        if (triggerBtn) triggerBtn.disabled = false;
+    }
+}
+
+// Presentation Timer
+function setTimerPreset(seconds) {
+    // Stop running timer if active
+    if (demoState.timerRunning) {
+        pauseTimer();
+    }
+
+    demoState.timerSeconds = seconds;
+    updateTimerDisplay();
+    updateTimerStatus('Ready');
+
+    // Clear warning class when setting preset
+    const display = document.getElementById('timer-display');
+    if (display) display.classList.remove('timer-warning');
+}
+
+function setTimerCustom() {
+    const input = document.getElementById('timer-custom-input');
+    const minutes = parseInt(input.value);
+
+    if (!minutes || minutes < 1 || minutes > 120) {
+        alert('Please enter a valid duration (1-120 minutes)');
+        return;
+    }
+
+    demoState.timerSeconds = minutes * 60;
+    updateTimerDisplay();
+    updateTimerStatus('Ready');
+    input.value = '';
+}
+
+function startTimer() {
+    if (demoState.timerSeconds <= 0) {
+        alert('Please set a timer duration first');
+        return;
+    }
+
+    demoState.timerRunning = true;
+    updateTimerButtons();
+
+    // Clear warning class when starting
+    const display = document.getElementById('timer-display');
+    if (display) display.classList.remove('timer-warning');
+
+    demoState.timerInterval = setInterval(() => {
+        demoState.timerSeconds = Math.max(0, demoState.timerSeconds - 1);
+
+        updateTimerDisplay();
+
+        // Check for warning threshold
+        if (demoState.timerSeconds <= demoState.timerWarningThreshold) {
+            display.classList.add('timer-warning');
+        }
+
+        // Check for completion
+        if (demoState.timerSeconds <= 0) {
+            pauseTimer();
+            updateTimerStatus('Time\'s Up!');
+
+            // Play audio alert if enabled
+            const audioEnabled = document.getElementById('timer-audio-enabled').checked;
+            if (audioEnabled) {
+                playTimerAlert();
+            }
+        }
+    }, 1000);
+
+    updateTimerStatus('Running');
+}
+
+function pauseTimer() {
+    demoState.timerRunning = false;
+    if (demoState.timerInterval) {
+        clearInterval(demoState.timerInterval);
+        demoState.timerInterval = null;
+    }
+    updateTimerButtons();
+    updateTimerStatus('Paused');
+}
+
+function resetTimer() {
+    pauseTimer();
+    demoState.timerSeconds = 0;
+    updateTimerDisplay();
+    updateTimerStatus('Ready');
+
+    const display = document.getElementById('timer-display');
+    if (display) display.classList.remove('timer-warning');
+}
+
+function updateTimerDisplay() {
+    const display = document.getElementById('timer-display');
+    if (!display) return;
+
+    const minutes = Math.floor(demoState.timerSeconds / 60);
+    const seconds = demoState.timerSeconds % 60;
+    display.textContent = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function updateTimerStatus(status) {
+    const statusEl = document.getElementById('timer-status');
+    if (statusEl) statusEl.textContent = status;
+}
+
+function updateTimerButtons() {
+    const startBtn = document.getElementById('timer-start-btn');
+    const pauseBtn = document.getElementById('timer-pause-btn');
+
+    if (startBtn) startBtn.disabled = demoState.timerRunning;
+    if (pauseBtn) pauseBtn.disabled = !demoState.timerRunning;
+}
+
+function playTimerAlert() {
+    // Create a simple beep using Web Audio API
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        oscillator.frequency.value = 800; // 800 Hz beep
+        oscillator.type = 'sine';
+
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+
+        // Close AudioContext when oscillator finishes
+        oscillator.onended = () => audioContext.close();
+    } catch (error) {
+        console.error('Failed to play timer alert:', error);
+    }
+}
+
+// Utility: Format milliseconds to M:SS
+function formatMs(ms) {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
