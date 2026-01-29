@@ -963,7 +963,12 @@ function renderBatchOperations(data) {
         `;
     }
 
-    grid.innerHTML = summaryHtml + cardsHtml + cleanroomHtml;
+    // Use flex layout: summary on top, equipment grid, then cleanroom section below
+    grid.innerHTML = `
+        ${summaryHtml}
+        <div class="batch-equipment-grid">${cardsHtml}</div>
+        ${cleanroomHtml}
+    `;
 }
 
 // Render batch operations error state

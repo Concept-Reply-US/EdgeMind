@@ -1482,9 +1482,32 @@
             font-size: 0.75rem;
         }
 
+        /* Batch Equipment Grid - wider cards for long equipment names */
+        .batch-equipment-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        /* When batch cards are present, container uses flex layout */
+        .line-oee-grid:has(.batch-equipment-grid) {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+        }
+
+        /* Equipment name - allow wrapping for long names */
+        .batch-card .equipment-name {
+            white-space: normal;
+            word-wrap: break-word;
+            line-height: 1.3;
+            overflow: visible;
+            text-overflow: clip;
+        }
+
         /* Cleanroom Environmental Zones */
         .cleanroom-section {
-            grid-column: 1 / -1;
+            width: 100%;
             margin-top: 16px;
             padding-top: 16px;
             border-top: 1px solid rgba(0, 255, 255, 0.2);
