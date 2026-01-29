@@ -1483,6 +1483,23 @@
         }
 
         /* Cleanroom Environmental Zones */
+        .cleanroom-section {
+            grid-column: 1 / -1;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(0, 255, 255, 0.2);
+        }
+
+        .cleanroom-header {
+            margin-bottom: 12px;
+        }
+
+        .cleanroom-header h4 {
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            margin: 0 0 8px 0;
+        }
+
         .cleanroom-summary {
             display: flex;
             gap: 20px;
