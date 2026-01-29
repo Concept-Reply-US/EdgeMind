@@ -12,8 +12,8 @@ on:
       - 'deploy/**'
       - '.github/workflows/deploy.yml'
       - 'index.html'
-      - 'app.js'
-      - 'styles.css'
+      - 'js/**'
+      - 'css/**'
   workflow_dispatch:
 
 permissions:
