@@ -27,8 +27,10 @@ Project configuration, constants, and frequently-needed reference information.
 #### ⚠️ DEPLOYMENT RULES (IMPORTANT)
 1. **NEVER manually fix production** - Always use CI/CD or CDK templates
 2. **Push to feature branch** → Create PR to `main` → Merge triggers deploy
-3. GitHub Actions pipeline triggers on push to `main` only
-4. EC2 instance has been **terminated** - no longer exists
+3. GitHub Actions pipeline triggers on push to `main` only (production)
+4. EC2 instance is **active** - used as dev/staging environment
+5. `deploy.yml` deploys to EC2 on push to `dev` and feature branches (dev environment)
+6. `deploy-backend.yml` + `deploy-frontend.yml` deploy to ECS Fargate + S3/CloudFront on push to `main` (production)
 
 #### CDK Stacks
 | Stack | Purpose |
@@ -224,8 +226,9 @@ if (oee === null && availability && performance && quality) {
   - `AWS_ROLE_ARN` - ARN of the IAM role for OIDC auth
   - `CLOUDFRONT_DISTRIBUTION_ID` - CloudFront distribution ID for cache invalidation
 - **Workflows**:
-  - `.github/workflows/deploy-frontend.yml` - S3 sync + CloudFront invalidation
-  - `.github/workflows/deploy-backend.yml` - ECR build + ECS deploy
+  - `.github/workflows/deploy-frontend.yml` - S3 sync + CloudFront invalidation (production, triggers on `main`)
+  - `.github/workflows/deploy-backend.yml` - ECR build + ECS deploy (production, triggers on `main`)
+  - `.github/workflows/deploy.yml` - ECR build + EC2 deploy via SSM (dev, triggers on `dev` and feature branches)
 
 ---
 

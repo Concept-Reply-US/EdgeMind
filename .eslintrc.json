@@ -1,0 +1,30 @@
+{
+  "env": {
+    "es2020": true
+  },
+  "parserOptions": {
+    "ecmaVersion": 2020
+  },
+  "extends": ["eslint:recommended", "prettier"],
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-undef": "error",
+    "no-constant-condition": "warn",
+    "eqeqeq": ["warn", "smart"]
+  },
+  "overrides": [
+    {
+      "files": ["js/**/*.js"],
+      "env": { "browser": true },
+      "parserOptions": { "sourceType": "module" },
+      "globals": {
+        "Chart": "readonly"
+      }
+    },
+    {
+      "files": ["lib/**/*.js", "server.js"],
+      "env": { "node": true },
+      "parserOptions": { "sourceType": "script" }
+    }
+  ]
+}

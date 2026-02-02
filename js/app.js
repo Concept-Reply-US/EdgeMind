@@ -242,6 +242,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.persona-view').forEach(view => {
         observer.observe(view, { attributes: true });
     });
+
+    window.addEventListener('beforeunload', () => {
+        observer.disconnect();
+    });
 });
 
 // Initialize on page load
