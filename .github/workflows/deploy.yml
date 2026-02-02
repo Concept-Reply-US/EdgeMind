@@ -44,6 +44,12 @@ jobs:
       - name: Security audit
         run: npm audit --audit-level=high
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
