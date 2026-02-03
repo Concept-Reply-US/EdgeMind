@@ -39,6 +39,7 @@
 **API Reference**
 * [[REST-Endpoints]]
 * [[WebSocket-Protocol]]
+* [[Schema-Hierarchy-API]]
 
 **Features**
 * [[AI-Trend-Analysis]]
@@ -50,6 +51,7 @@
 * [[Local-Development]]
 * [[Docker-Deployment]]
 * [[EC2-Production]]
+* [[GitHub-OIDC-Setup]]
 
 **Contributing**
 * [[Code-Style-Guide]]
