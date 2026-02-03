@@ -12,8 +12,14 @@ Architecture:
 - S3 + CloudFront for frontend static files
 - Secrets Manager for MQTT and InfluxDB credentials
 - IAM roles with Bedrock permissions for Claude AI
+
+Configuration:
+- Set CDK_DEFAULT_ACCOUNT or pass -c account=XXXX to override account
+- Set CDK_DEFAULT_REGION or pass -c region=XXXX to override region
+- Pass -c stack_suffix=XXXX to add suffix to stack names (e.g., for personal stacks)
 """
 
+import os
 import aws_cdk as cdk
 from aws_cdk import aws_ecs as ecs
 
@@ -23,38 +29,53 @@ from stacks.database_stack import DatabaseStack
 from stacks.backend_stack import BackendStack
 from stacks.frontend_stack import FrontendStack
 from stacks.agentcore_stack import AgentCoreStack
+from stacks.knowledge_base_stack import KnowledgeBaseStack
 
 
-# Configuration
+# Configuration with environment variable / context overrides
 PROJECT_NAME = "edgemind"
 ENVIRONMENT = "prod"
-AWS_ACCOUNT = "718815871498"
-AWS_REGION = "us-east-1"
-AWS_PROFILE = "reply"  # For local deployment
 
+# Default values (CI/CD account) - can be overridden via context or env vars
+DEFAULT_ACCOUNT = "718815871498"
+DEFAULT_REGION = "us-east-1"
+DEFAULT_VPC_ID = "vpc-0352743a1bf5ef86f"  # CI/CD account default VPC
 
 app = cdk.App()
 
+# Allow override via CDK context (-c account=XXX) or environment variables
+aws_account = app.node.try_get_context("account") or os.environ.get("CDK_DEFAULT_ACCOUNT") or DEFAULT_ACCOUNT
+aws_region = app.node.try_get_context("region") or os.environ.get("CDK_DEFAULT_REGION") or DEFAULT_REGION
+resource_suffix = app.node.try_get_context("resource_suffix") or ""  # For globally-unique resources (S3 buckets)
+vpc_id = app.node.try_get_context("vpc_id") or DEFAULT_VPC_ID
+bedrock_model_id = app.node.try_get_context("bedrock_model_id")  # None uses stack default
+
+# Stack names are always edgemind-prod-* (no suffix)
+stack_prefix = f"{PROJECT_NAME}-{ENVIRONMENT}"
+
 # Environment configuration
 env = cdk.Environment(
-    account=AWS_ACCOUNT,
-    region=AWS_REGION
+    account=aws_account,
+    region=aws_region
 )
 
 # Stack 1: Network Infrastructure (VPC, Subnets, Security Groups)
 network_stack = NetworkStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-network",
+    app, f"{stack_prefix}-network",
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
+    vpc_id=vpc_id,
     env=env,
     description="VPC, subnets, NAT gateway, and security groups for EdgeMind factory dashboard"
 )
 
 # Stack 2: Secrets Manager (MQTT and InfluxDB credentials)
 secrets_stack = SecretsStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-secrets",
+    app, f"{stack_prefix}-secrets",
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
     env=env,
     description="Secrets Manager secrets for MQTT broker and InfluxDB credentials"
 )
@@ -62,14 +83,14 @@ secrets_stack = SecretsStack(
 # Create ECS Cluster (shared by backend and database)
 cluster = ecs.Cluster(
     network_stack, "EdgeMindCluster",
-    cluster_name=f"{PROJECT_NAME}-{ENVIRONMENT}-cluster",
+    cluster_name=f"{stack_prefix}-cluster",
     vpc=network_stack.vpc,
     container_insights_v2=ecs.ContainerInsights.ENABLED,
 )
 
 # Stack 3: Database (InfluxDB + ChromaDB on ECS Fargate with EFS)
 database_stack = DatabaseStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-database",
+    app, f"{stack_prefix}-database",
     vpc=network_stack.vpc,
     ecs_cluster=cluster,
     influxdb_security_group=network_stack.influxdb_security_group,
@@ -78,6 +99,7 @@ database_stack = DatabaseStack(
     influxdb_secret=secrets_stack.influxdb_secret,
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
     env=env,
     description="InfluxDB and ChromaDB on ECS Fargate with EFS persistence"
 )
@@ -86,7 +108,7 @@ database_stack.add_dependency(secrets_stack)
 
 # Stack 4: Backend (Node.js on ECS Fargate with ALB and ECR)
 backend_stack = BackendStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-backend",
+    app, f"{stack_prefix}-backend",
     vpc=network_stack.vpc,
     ecs_cluster=cluster,
     backend_security_group=network_stack.backend_security_group,
@@ -96,6 +118,8 @@ backend_stack = BackendStack(
     maintainx_secret=secrets_stack.maintainx_secret,
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
+    bedrock_model_id=bedrock_model_id,
     env=env,
     description="Node.js backend service on ECS Fargate with Application Load Balancer"
 )
@@ -105,10 +129,11 @@ backend_stack.add_dependency(database_stack)  # Ensure InfluxDB is running first
 
 # Stack 5: Frontend (S3 + CloudFront)
 frontend_stack = FrontendStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-frontend",
+    app, f"{stack_prefix}-frontend",
     alb=backend_stack.alb,
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
     env=env,
     description="S3 bucket and CloudFront distribution for frontend static files"
 )
@@ -116,17 +141,28 @@ frontend_stack.add_dependency(backend_stack)  # Need ALB DNS for CloudFront orig
 
 # Stack 6: AgentCore (Bedrock Agents Multi-Agent System)
 agentcore_stack = AgentCoreStack(
-    app, f"{PROJECT_NAME}-{ENVIRONMENT}-agentcore",
+    app, f"{stack_prefix}-agentcore",
     backend_api_url=f"http://{backend_stack.alb.load_balancer_dns_name}",
     project_name=PROJECT_NAME,
     environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
     env=env,
     description="Bedrock Agents multi-agent system for factory intelligence"
 )
 agentcore_stack.add_dependency(backend_stack)  # Need backend API URL
 
+# Stack 7: Knowledge Base (Bedrock KB with S3 Vectors for SOPs)
+knowledgebase_stack = KnowledgeBaseStack(
+    app, f"{stack_prefix}-knowledgebase",
+    project_name=PROJECT_NAME,
+    environment=ENVIRONMENT,
+    resource_suffix=resource_suffix,
+    env=env,
+    description="Bedrock Knowledge Base with S3 Vectors for SOP documents"
+)
+
 # Add tags to all resources
-for stack in [network_stack, secrets_stack, database_stack, backend_stack, frontend_stack, agentcore_stack]:
+for stack in [network_stack, secrets_stack, database_stack, backend_stack, frontend_stack, agentcore_stack, knowledgebase_stack]:
     cdk.Tags.of(stack).add("Project", PROJECT_NAME)
     cdk.Tags.of(stack).add("Environment", ENVIRONMENT)
     cdk.Tags.of(stack).add("ManagedBy", "CDK")

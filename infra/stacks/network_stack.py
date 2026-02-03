@@ -16,10 +16,15 @@ class NetworkStack(Stack):
         construct_id: str,
         project_name: str = "edgemind",
         environment: str = "prod",
+        resource_suffix: str = "",
         vpc_id: str = "vpc-0352743a1bf5ef86f",  # Default VPC
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Base name prefix for account-scoped resources (security groups, etc.)
+        name_prefix = f"{project_name}-{environment}"
+        # resource_suffix not used here - security groups are account-scoped, not global
 
         # Import existing default VPC instead of creating new one
         # This avoids VPC limit issues and saves NAT Gateway costs
@@ -28,32 +33,30 @@ class NetworkStack(Stack):
             vpc_id=vpc_id
         )
 
-        # Security Group for ALB (public-facing)
+        # Security Group for ALB (CloudFront-facing only)
         self.alb_security_group = ec2.SecurityGroup(
             self, "ALBSecurityGroup",
             vpc=self.vpc,
-            security_group_name=f"{project_name}-{environment}-alb-sg",
+            security_group_name=f"{name_prefix}-alb-sg",
             description="Security group for Application Load Balancer",
             allow_all_outbound=True,
         )
 
-        # Allow HTTP and HTTPS from internet
+        # CloudFront managed prefix list - restricts ALB to CloudFront IPs only
+        cloudfront_prefix_list = ec2.Peer.prefix_list("pl-3b927c52")  # com.amazonaws.global.cloudfront.origin-facing
+
+        # Allow HTTP from CloudFront only (CloudFront→ALB uses HTTP_ONLY)
         self.alb_security_group.add_ingress_rule(
-            peer=ec2.Peer.any_ipv4(),
+            peer=cloudfront_prefix_list,
             connection=ec2.Port.tcp(80),
-            description="Allow HTTP from internet"
-        )
-        self.alb_security_group.add_ingress_rule(
-            peer=ec2.Peer.any_ipv4(),
-            connection=ec2.Port.tcp(443),
-            description="Allow HTTPS from internet"
+            description="Allow HTTP from CloudFront"
         )
 
         # Security Group for Backend ECS tasks
         self.backend_security_group = ec2.SecurityGroup(
             self, "BackendSecurityGroup",
             vpc=self.vpc,
-            security_group_name=f"{project_name}-{environment}-backend-sg",
+            security_group_name=f"{name_prefix}-backend-sg",
             description="Security group for Backend ECS tasks",
             allow_all_outbound=True,
         )
@@ -74,7 +77,7 @@ class NetworkStack(Stack):
         self.influxdb_security_group = ec2.SecurityGroup(
             self, "InfluxDBSecurityGroup",
             vpc=self.vpc,
-            security_group_name=f"{project_name}-{environment}-influxdb-sg",
+            security_group_name=f"{name_prefix}-influxdb-sg",
             description="Security group for InfluxDB ECS tasks",
             allow_all_outbound=True,
         )
@@ -90,7 +93,7 @@ class NetworkStack(Stack):
         self.chromadb_security_group = ec2.SecurityGroup(
             self, "ChromaDBSecurityGroup",
             vpc=self.vpc,
-            security_group_name=f"{project_name}-{environment}-chromadb-sg",
+            security_group_name=f"{name_prefix}-chromadb-sg",
             description="Security group for ChromaDB ECS tasks",
             allow_all_outbound=True,
         )
@@ -106,7 +109,7 @@ class NetworkStack(Stack):
         self.efs_security_group = ec2.SecurityGroup(
             self, "EFSSecurityGroup",
             vpc=self.vpc,
-            security_group_name=f"{project_name}-{environment}-efs-sg",
+            security_group_name=f"{name_prefix}-efs-sg",
             description="Security group for EFS mount targets",
             allow_all_outbound=True,
         )

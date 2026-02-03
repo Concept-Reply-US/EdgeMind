@@ -25,9 +25,13 @@ class SecretsStack(Stack):
         construct_id: str,
         project_name: str = "edgemind",
         environment: str = "prod",
+        resource_suffix: str = "",
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Build resource name prefix (includes suffix if provided)
+        name_prefix = f"{project_name}-{environment}"
 
         # MQTT credentials secret
         # NOTE: Password MUST be updated after deployment - use update-secrets.sh or AWS Console

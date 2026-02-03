@@ -4,7 +4,6 @@ import { state, connection, WS_URL, SLEEPING_AGENT_MESSAGES } from './state.js';
 import { updateConnectionStatus, updateMetrics, updateEquipmentState } from './dashboard-render.js';
 import { addClaudeInsight, renderActiveFilters } from './insights.js';
 import { addMQTTMessageToStream } from './stream.js';
-import { displayClaudeResponse } from './chat.js';
 import { topicToMeasurement, getEnterpriseParam } from './utils.js';
 import { fetchActiveSensorCount } from './dashboard-data.js';
 
@@ -214,11 +213,6 @@ export function handleServerMessage(message) {
                 state.stats.anomalyCount += message.data.anomalies.length;
                 updateMetrics();
             }
-            break;
-
-        case 'claude_response':
-            // Response to direct question
-            displayClaudeResponse(message.data);
             break;
 
         case 'equipment_state':

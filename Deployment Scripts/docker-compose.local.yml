@@ -6,7 +6,7 @@ services:
     image: chromadb/chroma:latest
     container_name: edgemind-chromadb
     ports:
-      - "${CHROMA_PORT:-8000}:8000"
+      - "${CHROMA_PORT:-8002}:8000"
     environment:
       - ANONYMIZED_TELEMETRY=FALSE
     volumes:
@@ -17,6 +17,23 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+
+  kb-init:
+    image: python:3.11-slim
+    container_name: edgemind-kb-init
+    entrypoint: ["/bin/sh", "-c", "pip install -q chromadb pymupdf && python /app/scripts/ingest_kb.py"]
+    environment:
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - KB_COLLECTION=${KB_COLLECTION:-edgemind_sops}
+      - KB_PATH=/app/knowledge-base
+    volumes:
+      - ./local:/app/scripts:ro
+      - ../knowledge-base:/app/knowledge-base:ro
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    restart: "no"
 
   influxdb:
     image: influxdb:2.7
@@ -34,6 +51,64 @@ services:
       - influxdb-data:/var/lib/influxdb2
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  agent-chat:
+    build:
+      context: ../agent/chat
+      dockerfile: Dockerfile
+    container_name: edgemind-agent-chat
+    ports:
+      - "8080:8080"
+    environment:
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-20250514-v1:0}
+      - MCP_SERVER_URL=http://agentcore-gateway:8000/mcp
+      - MCP_AUTH_MODE=none
+      - KB_BACKEND=${KB_BACKEND:-local}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+      - KB_COLLECTION=${KB_COLLECTION:-edgemind_sops}
+    depends_on:
+      agentcore-gateway:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # agent-troubleshoot and agent-anomaly disabled - missing Dockerfiles
+  # TODO: Re-enable when agent source files are available
+
+  agentcore-gateway:
+    image: python:3.11-slim
+    container_name: edgemind-agentcore-gateway
+    entrypoint: ["/bin/sh", "-c", "apt-get update -qq && apt-get install -qq -y git && pip install -q uv && uvx --from 'git+https://github.com/briananderson1222/awslabs-mcp.git#subdirectory=src/openapi-mcp-server' awslabs.openapi-mcp-server --transport http --host 0.0.0.0 --port 8000"]
+    ports:
+      - "8001:8000"
+    environment:
+      - API_NAME=edgemind
+      - API_BASE_URL=http://backend:3000
+      - API_SPEC_URL=http://backend:3000/api/api-spec/v3
+      - LOG_LEVEL=INFO
+      - ENABLE_PROMETHEUS=false
+      - ENABLE_OPERATION_PROMPTS=true
+    command: ["--transport", "http", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -61,9 +136,15 @@ services:
       # ChromaDB Configuration (uses internal Docker network)
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=${CHROMA_PORT:-8000}
+      # AgentCore URLs (internal Docker network)
+      - AGENT_CHAT_URL=http://agent-chat:8080
+      # AGENT_TROUBLESHOOT_URL and AGENT_ANOMALY_URL disabled - agents not deployed
       # AI Configuration (AWS Bedrock)
       - AWS_REGION=${AWS_REGION:-us-east-1}
-      - AWS_PROFILE=${AWS_PROFILE:-default}
+      # Note: Don't set AWS_PROFILE - it conflicts with explicit credentials
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
       - BEDROCK_MODEL_ID=${BEDROCK_MODEL_ID:-us.anthropic.claude-sonnet-4-20250514-v1:0}
       # Optional: Direct Anthropic API (if not using Bedrock)
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
@@ -74,8 +155,11 @@ services:
       - ${HOME}/.aws:/home/nodejs/.aws:ro
       # Mount frontend files for live reload (no rebuild needed)
       - ../index.html:/app/index.html:ro
-      - ../styles.css:/app/styles.css:ro
-      - ../app.js:/app/app.js:ro
+      - ../css:/app/css:ro
+      - ../js:/app/js:ro
+      # Mount backend files (restart container to pick up changes)
+      - ../server.js:/app/server.js:ro
+      - ../lib:/app/lib:ro
     depends_on:
       influxdb:
         condition: service_healthy

@@ -12,15 +12,10 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 # Copy application code
-# ⚠️ CRITICAL: All files below are REQUIRED for the app to work!
-# If you add new modules or files, you MUST add them here.
-# Missing files = container crash or broken UI
 COPY server.js ./
 COPY index.html ./
-COPY styles.css ./
-COPY app.js ./
-COPY factory-command-center.html ./
-# ⚠️ lib/ folder contains all backend modules - DO NOT FORGET THIS
+COPY css/ ./css/
+COPY js/ ./js/
 COPY lib/ ./lib/
 
 # Create non-root user
