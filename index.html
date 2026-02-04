@@ -101,6 +101,7 @@
             <button class="sub-nav__item" data-view="plant-oee-drilldown">OEE Drill-down</button>
             <button class="sub-nav__item" data-view="plant-equipment">Equipment Health</button>
             <button class="sub-nav__item" data-view="plant-alerts">Alerts & Work Orders</button>
+            <button class="sub-nav__item" data-view="plant-process-trends">Process Trends</button>
         </div>
 
         <!-- Demo Control Panel -->
@@ -403,7 +404,13 @@
 
         <div class="persona-view" data-view="coo-trends">
             <div class="view-header">
-                <h2 class="view-title">Trend Analysis</h2>
+                <h2 class="view-title">Predictive Trend Analysis</h2>
+                <div class="time-window-selector">
+                    <button class="window-btn" onclick="selectTimeWindow('hourly')">Hourly</button>
+                    <button class="window-btn active" onclick="selectTimeWindow('shift')">Shift (8h)</button>
+                    <button class="window-btn" onclick="selectTimeWindow('daily')">Daily</button>
+                    <button class="window-btn" onclick="selectTimeWindow('weekly')">Weekly</button>
+                </div>
             </div>
             <div class="trends-chart-grid">
                 <div class="trend-chart-container">
@@ -417,6 +424,22 @@
                 <div class="trend-chart-container">
                     <h3 class="chart-title">Equipment State Distribution</h3>
                     <canvas id="coo-equipment-chart"></canvas>
+                </div>
+                <!-- NEW: Downtime Pareto Chart -->
+                <div class="trend-chart-container chart-card-wide">
+                    <h3 class="chart-title">Downtime Pareto (Top Contributors)</h3>
+                    <canvas id="coo-downtime-pareto-chart"></canvas>
+                </div>
+                <!-- NEW: Waste Predictive Chart -->
+                <div class="trend-chart-container chart-card-wide">
+                    <h3 class="chart-title">Waste Trend with Predictions</h3>
+                    <div id="waste-prediction-alerts"></div>
+                    <canvas id="coo-waste-predictive-chart"></canvas>
+                </div>
+                <!-- NEW: OEE Components Chart -->
+                <div class="trend-chart-container chart-card-wide">
+                    <h3 class="chart-title">OEE Components (A × P × Q) with Predictions</h3>
+                    <canvas id="coo-oee-components-chart"></canvas>
                 </div>
             </div>
         </div>
@@ -512,6 +535,46 @@
                     <div id="work-orders-list" class="work-orders-list">
                         <div class="view-loading">Loading work orders...</div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plant Manager: Process Trends View -->
+        <div class="persona-view" data-view="plant-process-trends">
+            <div class="view-header">
+                <h2 class="view-title">Process Trend Analysis</h2>
+                <div class="enterprise-badge" id="plant-process-enterprise">Enterprise A</div>
+            </div>
+
+            <div class="process-trends-grid">
+                <!-- SPC Chart (full width) -->
+                <div class="chart-card chart-card-full">
+                    <div class="chart-card-header">
+                        <h3 class="chart-card-title">Statistical Process Control (SPC)</h3>
+                        <select id="plant-spc-measurement-select" class="spc-dropdown">
+                            <option>Loading...</option>
+                        </select>
+                    </div>
+                    <div id="spc-cpk-badge" class="cpk-badge"></div>
+                    <canvas id="plant-spc-chart"></canvas>
+                </div>
+
+                <!-- Downtime Pareto (half width) -->
+                <div class="chart-card">
+                    <h3 class="chart-card-title">Downtime Contributors</h3>
+                    <canvas id="plant-downtime-chart"></canvas>
+                </div>
+
+                <!-- Production Volume (half width) -->
+                <div class="chart-card">
+                    <h3 class="chart-card-title">Production Volume vs Target</h3>
+                    <canvas id="plant-production-chart"></canvas>
+                </div>
+
+                <!-- Energy Consumption (full width) -->
+                <div class="chart-card chart-card-full">
+                    <h3 class="chart-card-title">Energy Consumption by Line</h3>
+                    <canvas id="plant-energy-chart"></canvas>
                 </div>
             </div>
         </div>

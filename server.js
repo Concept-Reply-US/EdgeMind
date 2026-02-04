@@ -43,6 +43,11 @@ const {
 } = require('./lib/oee');
 const { getEquipmentMetadata, EQUIPMENT_ALIASES, resolveEquipmentId } = require('./lib/equipment');
 
+// NEW: Trend analysis, SPC, and production tracking modules
+const trendsModule = require('./lib/trends');
+const spcModule = require('./lib/spc');
+const productionModule = require('./lib/production');
+
 // Initialize services
 const app = express();
 const bedrockClient = new BedrockRuntimeClient({ region: CONFIG.bedrock.region });
@@ -1283,6 +1288,183 @@ app.get('/api/cmms/health', async (req, res) => {
       healthy: false,
       message: error.message,
       timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ============================================================================
+// TREND ANALYSIS ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/trends/downtime-pareto - Downtime Pareto analysis
+ * Query params: window (hourly|shift|daily|weekly), enterprise, limit
+ */
+app.get('/api/trends/downtime-pareto', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
+    const window = trendsModule.validateTimeWindow(req.query.window);
+    const limit = parseInt(req.query.limit) || 10;
+
+    const result = await trendsModule.calculateDowntimePareto(enterprise, window, limit);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Downtime Pareto error:', error);
+    res.status(500).json({
+      error: 'Failed to calculate downtime Pareto',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/trends/waste-predictive - Waste trends with predictions
+ * Query params: window (hourly|shift|daily|weekly), enterprise
+ */
+app.get('/api/trends/waste-predictive', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
+    const window = trendsModule.validateTimeWindow(req.query.window);
+
+    const result = await trendsModule.calculateWasteTrend(enterprise, window);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Waste predictive error:', error);
+    res.status(500).json({
+      error: 'Failed to calculate waste predictions',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/trends/oee-components - OEE component trends with predictions
+ * Query params: window (hourly|shift|daily|weekly), enterprise, component (availability|performance|quality|all)
+ */
+app.get('/api/trends/oee-components', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
+    const window = trendsModule.validateTimeWindow(req.query.window);
+    const component = req.query.component || 'all';
+
+    const result = await trendsModule.calculateOEEComponentTrend(enterprise, window, component);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] OEE components error:', error);
+    res.status(500).json({
+      error: 'Failed to calculate OEE component trends',
+      message: error.message
+    });
+  }
+});
+
+// ============================================================================
+// SPC (STATISTICAL PROCESS CONTROL) ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/spc/measurements - Discover top problematic measurements for SPC
+ * Query params: enterprise, limit (default: 5)
+ */
+app.get('/api/spc/measurements', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null || enterprise === 'ALL') {
+      return res.status(400).json({
+        error: 'Invalid enterprise parameter. Must specify a single enterprise.'
+      });
+    }
+
+    const limit = parseInt(req.query.limit) || 5;
+    const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit);
+
+    res.json({
+      measurements,
+      enterprise,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[API] SPC measurements discovery error:', error);
+    res.status(500).json({
+      error: 'Failed to discover SPC measurements',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/spc/data - Get SPC data for a specific measurement
+ * Query params: measurement, window (hourly|shift|daily|weekly), enterprise
+ */
+app.get('/api/spc/data', async (req, res) => {
+  try {
+    const measurement = req.query.measurement;
+    if (!measurement) {
+      return res.status(400).json({
+        error: 'Missing required parameter: measurement'
+      });
+    }
+
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null || enterprise === 'ALL') {
+      return res.status(400).json({
+        error: 'Invalid enterprise parameter. Must specify a single enterprise.'
+      });
+    }
+
+    const window = trendsModule.validateTimeWindow(req.query.window);
+    const result = await spcModule.querySPCData(measurement, window, enterprise);
+
+    res.json(result);
+  } catch (error) {
+    console.error('[API] SPC data error:', error);
+    res.status(500).json({
+      error: 'Failed to query SPC data',
+      message: error.message
+    });
+  }
+});
+
+// ============================================================================
+// PRODUCTION TRACKING ENDPOINTS
+// ============================================================================
+
+/**
+ * GET /api/production/volume - Production volume vs target by line
+ * Query params: enterprise, window (hourly|shift|daily|weekly)
+ */
+app.get('/api/production/volume', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
+    const window = trendsModule.validateTimeWindow(req.query.window);
+
+    const result = await productionModule.queryProductionVsTarget(enterprise, window);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Production volume error:', error);
+    res.status(500).json({
+      error: 'Failed to query production volume',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/production/energy - Energy consumption by line
+ * Query params: enterprise, window (hourly|shift|daily|weekly)
+ */
+app.get('/api/production/energy', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
+    const window = trendsModule.validateTimeWindow(req.query.window);
+
+    const result = await productionModule.queryEnergyConsumption(enterprise, window);
+    res.json(result);
+  } catch (error) {
+    console.error('[API] Energy consumption error:', error);
+    res.status(500).json({
+      error: 'Failed to query energy consumption',
+      message: error.message
     });
   }
 });
