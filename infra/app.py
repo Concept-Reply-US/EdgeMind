@@ -28,7 +28,6 @@ from stacks.secrets_stack import SecretsStack
 from stacks.database_stack import DatabaseStack
 from stacks.backend_stack import BackendStack
 from stacks.frontend_stack import FrontendStack
-from stacks.agentcore_stack import AgentCoreStack
 from stacks.knowledge_base_stack import KnowledgeBaseStack
 
 
@@ -139,19 +138,7 @@ frontend_stack = FrontendStack(
 )
 frontend_stack.add_dependency(backend_stack)  # Need ALB DNS for CloudFront origin
 
-# Stack 6: AgentCore (Bedrock Agents Multi-Agent System)
-agentcore_stack = AgentCoreStack(
-    app, f"{stack_prefix}-agentcore",
-    backend_api_url=f"http://{backend_stack.alb.load_balancer_dns_name}",
-    project_name=PROJECT_NAME,
-    environment=ENVIRONMENT,
-    resource_suffix=resource_suffix,
-    env=env,
-    description="Bedrock Agents multi-agent system for factory intelligence"
-)
-agentcore_stack.add_dependency(backend_stack)  # Need backend API URL
-
-# Stack 7: Knowledge Base (Bedrock KB with S3 Vectors for SOPs)
+# Stack 6: Knowledge Base (Bedrock KB with S3 Vectors for SOPs)
 knowledgebase_stack = KnowledgeBaseStack(
     app, f"{stack_prefix}-knowledgebase",
     project_name=PROJECT_NAME,
@@ -162,7 +149,7 @@ knowledgebase_stack = KnowledgeBaseStack(
 )
 
 # Add tags to all resources
-for stack in [network_stack, secrets_stack, database_stack, backend_stack, frontend_stack, agentcore_stack, knowledgebase_stack]:
+for stack in [network_stack, secrets_stack, database_stack, backend_stack, frontend_stack, knowledgebase_stack]:
     cdk.Tags.of(stack).add("Project", PROJECT_NAME)
     cdk.Tags.of(stack).add("Environment", ENVIRONMENT)
     cdk.Tags.of(stack).add("ManagedBy", "CDK")
