@@ -39,6 +39,7 @@ class BackendStack(Stack):
         environment: str = "prod",
         resource_suffix: str = "",
         bedrock_model_id: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        cpu_architecture: str = "ARM64",
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -116,13 +117,14 @@ class BackendStack(Stack):
         )
 
         # Task Definition
+        arch = ecs.CpuArchitecture.ARM64 if cpu_architecture.upper() == "ARM64" else ecs.CpuArchitecture.X86_64
         task_definition = ecs.FargateTaskDefinition(
             self, "BackendTaskDef",
             family=f"{name_prefix}-backend",
             cpu=512,  # 0.5 vCPU
             memory_limit_mib=1024,  # 1 GB
             runtime_platform=ecs.RuntimePlatform(
-                cpu_architecture=ecs.CpuArchitecture.ARM64,
+                cpu_architecture=arch,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX
             )
         )

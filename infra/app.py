@@ -48,6 +48,7 @@ aws_region = app.node.try_get_context("region") or os.environ.get("CDK_DEFAULT_R
 resource_suffix = app.node.try_get_context("resource_suffix") or ""  # For globally-unique resources (S3 buckets)
 vpc_id = app.node.try_get_context("vpc_id") or DEFAULT_VPC_ID
 bedrock_model_id = app.node.try_get_context("bedrock_model_id")  # None uses stack default
+cpu_architecture = app.node.try_get_context("cpu_architecture") or "ARM64"  # ARM64 or X86_64
 
 # Stack names are always edgemind-prod-* (no suffix)
 stack_prefix = f"{PROJECT_NAME}-{ENVIRONMENT}"
@@ -119,6 +120,7 @@ backend_stack = BackendStack(
     environment=ENVIRONMENT,
     resource_suffix=resource_suffix,
     bedrock_model_id=bedrock_model_id,
+    cpu_architecture=cpu_architecture,
     env=env,
     description="Node.js backend service on ECS Fargate with Application Load Balancer"
 )
