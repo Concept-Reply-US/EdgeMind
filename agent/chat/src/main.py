@@ -4,7 +4,7 @@ import yaml
 from strands import Agent
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from model.load import load_model
-from src.kb_tools import retrieve
+from kb_tools import retrieve
 
 app = BedrockAgentCoreApp()
 
