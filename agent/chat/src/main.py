@@ -19,6 +19,7 @@ async def invoke(payload, context):
     tools = [retrieve]
     
     # Connect to MCP gateway
+    mcp_error = None
     if MCP_SERVER_URL:
         try:
             from strands.tools.mcp import MCPClient
@@ -34,9 +35,14 @@ async def invoke(payload, context):
                 from mcp.client.streamable_http import streamablehttp_client
                 mcp_client = MCPClient(lambda: streamablehttp_client(url=MCP_SERVER_URL))
             mcp_client.__enter__()
-            tools = [*mcp_client.list_tools_sync(), retrieve]
-        except Exception:
-            pass  # Fall back to local tools only
+            mcp_tools = mcp_client.list_tools_sync()
+            print(f"[MCP] Loaded {len(mcp_tools)} tools from gateway")
+            tools = [*mcp_tools, retrieve]
+        except Exception as e:
+            import traceback
+            mcp_error = str(e)
+            print(f"[MCP] Error connecting to gateway: {mcp_error}")
+            traceback.print_exc()
     
     # Build messages from history
     history = payload.get("messages", [])
@@ -48,19 +54,23 @@ async def invoke(payload, context):
         system_prompt=SYSTEM_PROMPT,
         messages=messages
     )
-    stream = agent.stream_async(payload.get("prompt", ""))
-    last_tool = None
-    async for event in stream:
-        # Emit tool use events (deduplicated)
-        if "current_tool_use" in event:
-            tool_info = event["current_tool_use"]
-            tool_name = tool_info.get("name")
-            if tool_name and tool_name != last_tool:
-                last_tool = tool_name
-                yield f'{{"type": "tool_use", "name": "{tool_name}"}}'
-        # Emit text data
-        if "data" in event and isinstance(event["data"], str):
-            yield event["data"]
+    
+    try:
+        stream = agent.stream_async(payload.get("prompt", ""))
+        last_tool = None
+        async for event in stream:
+            # Emit tool use events (deduplicated)
+            if "current_tool_use" in event:
+                tool_info = event["current_tool_use"]
+                tool_name = tool_info.get("name")
+                if tool_name and tool_name != last_tool:
+                    last_tool = tool_name
+                    yield f'{{"type": "tool_use", "name": "{tool_name}"}}'
+            # Emit text data
+            if "data" in event and isinstance(event["data"], str):
+                yield event["data"]
+    except Exception as e:
+        yield f'{{"type": "error", "message": "{str(e)}"}}'
 
 if __name__ == "__main__":
     app.run()

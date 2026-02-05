@@ -341,16 +341,16 @@ EOF
   
   eval $DEPLOY_CMD
   
-  # Store agent ID in SSM for backend to discover
-  AGENT_ID=$(grep "agent_id:" .bedrock_agentcore.yaml 2>/dev/null | head -1 | awk '{print $2}')
-  if [ -n "$AGENT_ID" ]; then
+  # Store agent ARN in SSM for backend to discover
+  AGENT_ARN=$(grep "agent_arn:" .bedrock_agentcore.yaml 2>/dev/null | head -1 | awk '{print $2}')
+  if [ -n "$AGENT_ARN" ]; then
     aws ssm put-parameter \
       --name "/edgemind/agents/$agent" \
-      --value "$AGENT_ID" \
+      --value "$AGENT_ARN" \
       --type String \
       --overwrite \
       --region "$REGION" > /dev/null 2>&1 || true
-    echo "Stored agent ID in SSM: /edgemind/agents/$agent"
+    echo "Stored agent ARN in SSM: /edgemind/agents/$agent"
   fi
 done
 
