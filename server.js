@@ -11,11 +11,7 @@ const aiModule = require('./lib/ai');
 const { parseJsonValue } = require('./lib/ai/tools');
 const vectorStore = require('./lib/vector');
 const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/sparkplug/decoder');
-const { createAgentCoreClient } = require('./lib/agentcore');
 const demoEngine = require('./lib/demo/engine');
-
-// AgentCore client (initialized if configured)
-const agentCoreClient = createAgentCoreClient();
 
 // Foundation modules
 const CONFIG = require('./lib/config');
@@ -1786,100 +1782,6 @@ app.get('/api/schema/classifications', async (req, res) => {
     res.status(500).json({
       error: 'Failed to query schema classifications',
       message: error.message
-    });
-  }
-});
-
-// =============================================================================
-// AGENTCORE INTEGRATION ENDPOINTS
-// =============================================================================
-
-/**
- * POST /api/agent/ask - Proxy questions to AWS AgentCore orchestrator
- * Body: { question: string, sessionId?: string }
- * Response: { answer: string, sessionId: string }
- */
-app.post('/api/agent/ask', express.json(), async (req, res) => {
-  try {
-    // Check if AgentCore is enabled
-    if (!agentCoreClient) {
-      return res.status(503).json({
-        error: 'AgentCore is not configured',
-        message: 'Set AGENTCORE_AGENT_ID and AGENTCORE_ALIAS_ID environment variables'
-      });
-    }
-
-    // Validate request body
-    const { question, sessionId } = req.body;
-
-    if (!question || typeof question !== 'string') {
-      return res.status(400).json({
-        error: 'Missing or invalid question parameter',
-        message: 'Question must be a non-empty string'
-      });
-    }
-
-    if (question.length > 1000) {
-      return res.status(400).json({
-        error: 'Question too long',
-        message: 'Question must be less than 1000 characters'
-      });
-    }
-
-    if (sessionId && (typeof sessionId !== 'string' || sessionId.length > 100)) {
-      return res.status(400).json({
-        error: 'Invalid sessionId parameter',
-        message: 'sessionId must be a string less than 100 characters'
-      });
-    }
-
-    console.log(`[AgentCore API] Received question: "${question.substring(0, 50)}..."`);
-
-    // Invoke the agent
-    const result = await agentCoreClient.ask(question, sessionId);
-
-    res.json({
-      answer: result.answer,
-      sessionId: result.sessionId,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    console.error('AgentCore ask endpoint error:', error);
-    res.status(500).json({
-      error: 'Failed to process question',
-      message: error.message
-    });
-  }
-});
-
-/**
- * GET /api/agent/health - Check AgentCore connectivity
- */
-app.get('/api/agent/health', async (req, res) => {
-  if (!agentCoreClient) {
-    return res.json({
-      enabled: false,
-      healthy: false,
-      message: 'AgentCore not configured'
-    });
-  }
-
-  try {
-    const health = await agentCoreClient.healthCheck();
-
-    res.json({
-      enabled: true,
-      ...health,
-      timestamp: new Date().toISOString()
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      enabled: true,
-      healthy: false,
-      message: error.message,
-      timestamp: new Date().toISOString()
     });
   }
 });

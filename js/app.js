@@ -94,12 +94,6 @@ window.closeCardModal = closeCardModal;
 window.toggleChatPanel = toggleChatPanel;
 window.sendChatMessage = sendChatMessage;
 window.handleSuggestedQuestion = handleSuggestedQuestion;
-window.askClaudeQuestion = function() {
-    const question = prompt('Ask Claude about the factory:');
-    if (question) {
-        sendChatMessage(question);
-    }
-};
 window.launchScenario = launchScenario;
 window.stopScenario = stopScenario;
 window.stopInjection = stopInjection;

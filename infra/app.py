@@ -107,23 +107,25 @@ database_stack.add_dependency(network_stack)
 database_stack.add_dependency(secrets_stack)
 
 # Stack 4: Backend (Node.js on ECS Fargate with ALB and ECR)
-backend_stack = BackendStack(
-    app, f"{stack_prefix}-backend",
-    vpc=network_stack.vpc,
-    ecs_cluster=cluster,
-    backend_security_group=network_stack.backend_security_group,
-    alb_security_group=network_stack.alb_security_group,
-    mqtt_secret=secrets_stack.mqtt_secret,
-    influxdb_secret=secrets_stack.influxdb_secret,
-    maintainx_secret=secrets_stack.maintainx_secret,
-    project_name=PROJECT_NAME,
-    environment=ENVIRONMENT,
-    resource_suffix=resource_suffix,
-    bedrock_model_id=bedrock_model_id,
-    cpu_architecture=cpu_architecture,
-    env=env,
-    description="Node.js backend service on ECS Fargate with Application Load Balancer"
-)
+backend_kwargs = {
+    "vpc": network_stack.vpc,
+    "ecs_cluster": cluster,
+    "backend_security_group": network_stack.backend_security_group,
+    "alb_security_group": network_stack.alb_security_group,
+    "mqtt_secret": secrets_stack.mqtt_secret,
+    "influxdb_secret": secrets_stack.influxdb_secret,
+    "maintainx_secret": secrets_stack.maintainx_secret,
+    "project_name": PROJECT_NAME,
+    "environment": ENVIRONMENT,
+    "resource_suffix": resource_suffix,
+    "cpu_architecture": cpu_architecture,
+    "env": env,
+    "description": "Node.js backend service on ECS Fargate with Application Load Balancer",
+}
+if bedrock_model_id:
+    backend_kwargs["bedrock_model_id"] = bedrock_model_id
+
+backend_stack = BackendStack(app, f"{stack_prefix}-backend", **backend_kwargs)
 backend_stack.add_dependency(network_stack)
 backend_stack.add_dependency(secrets_stack)
 backend_stack.add_dependency(database_stack)  # Ensure InfluxDB is running first
