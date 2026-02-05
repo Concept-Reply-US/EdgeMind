@@ -237,7 +237,7 @@ SPEC=$(curl -s "$OPENAPI_URL" | jq --arg url "https://$CLOUDFRONT_DOMAIN" '.serv
 
 EXISTING_TARGET=$(aws bedrock-agentcore-control list-gateway-targets \
   --gateway-identifier "$GATEWAY_ID" --region "$REGION" \
-  --query "items[?name=='factory-api'].targetId" --output text 2>/dev/null || echo "")
+  --query "items[?name=='factoryapi'].targetId" --output text 2>/dev/null || echo "")
 
 TARGET_CONFIG="{\"mcp\":{\"openApiSchema\":{\"inlinePayload\":$(echo "$SPEC" | jq -c '.' | jq -Rs '.')}}}"
 CRED_CONFIG="[{\"credentialProviderType\":\"API_KEY\",\"credentialProvider\":{\"apiKeyCredentialProvider\":{\"providerArn\":\"$PROVIDER_ARN\",\"credentialParameterName\":\"x-api-key\",\"credentialLocation\":\"HEADER\"}}}]"
@@ -246,7 +246,7 @@ if [ -z "$EXISTING_TARGET" ]; then
   echo "Creating gateway target..."
   aws bedrock-agentcore-control create-gateway-target \
     --gateway-identifier "$GATEWAY_ID" \
-    --name "factory-api" \
+    --name "factoryapi" \
     --target-configuration "$TARGET_CONFIG" \
     --credential-provider-configurations "$CRED_CONFIG" \
     --region "$REGION" > /dev/null
@@ -255,7 +255,7 @@ else
   aws bedrock-agentcore-control update-gateway-target \
     --gateway-identifier "$GATEWAY_ID" \
     --target-id "$EXISTING_TARGET" \
-    --name "factory-api" \
+    --name "factoryapi" \
     --target-configuration "$TARGET_CONFIG" \
     --credential-provider-configurations "$CRED_CONFIG" \
     --region "$REGION" > /dev/null
@@ -333,7 +333,7 @@ EOF
     DEPLOY_CMD="$DEPLOY_CMD --env MCP_SERVER_URL=$GATEWAY_URL"
   fi
   if [ -n "$KB_ID" ]; then
-    DEPLOY_CMD="$DEPLOY_CMD --env STRANDS_KNOWLEDGE_BASE_ID=$KB_ID"
+    DEPLOY_CMD="$DEPLOY_CMD --env KNOWLEDGE_BASE_ID=$KB_ID"
   fi
   if [ -n "$BEDROCK_MODEL" ]; then
     DEPLOY_CMD="$DEPLOY_CMD --env BEDROCK_MODEL_ID=$BEDROCK_MODEL"
@@ -341,16 +341,16 @@ EOF
   
   eval $DEPLOY_CMD
   
-  # Store agent ID in SSM for backend to discover
-  AGENT_ID=$(grep "agent_id:" .bedrock_agentcore.yaml 2>/dev/null | head -1 | awk '{print $2}')
-  if [ -n "$AGENT_ID" ]; then
+  # Store agent ARN in SSM for backend to discover
+  AGENT_ARN=$(grep "agent_arn:" .bedrock_agentcore.yaml 2>/dev/null | head -1 | awk '{print $2}')
+  if [ -n "$AGENT_ARN" ]; then
     aws ssm put-parameter \
       --name "/edgemind/agents/$agent" \
-      --value "$AGENT_ID" \
+      --value "$AGENT_ARN" \
       --type String \
       --overwrite \
       --region "$REGION" > /dev/null 2>&1 || true
-    echo "Stored agent ID in SSM: /edgemind/agents/$agent"
+    echo "Stored agent ARN in SSM: /edgemind/agents/$agent"
   fi
 done
 

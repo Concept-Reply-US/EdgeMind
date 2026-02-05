@@ -69,7 +69,7 @@ const TOOL_LABELS = {
 };
 function formatToolName(name) {
   // Strip deployed prefix, then lookup
-  const baseName = name.replace(/^factory-api___/, '');
+  const baseName = name.replace(/^factoryapi___/, '');
   return TOOL_LABELS[baseName] || baseName.replace(/([A-Z])/g, ' $1').trim();
 }
 
