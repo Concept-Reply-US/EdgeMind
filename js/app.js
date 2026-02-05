@@ -44,7 +44,7 @@ import {
     toggleChatPanel,
     sendChatMessage,
     handleSuggestedQuestion,
-    askClaude
+    updateScrollToBottomBtn
 } from './chat.js';
 import {
     initDemoScenarios,
@@ -94,12 +94,6 @@ window.closeCardModal = closeCardModal;
 window.toggleChatPanel = toggleChatPanel;
 window.sendChatMessage = sendChatMessage;
 window.handleSuggestedQuestion = handleSuggestedQuestion;
-window.askClaudeQuestion = function() {
-    const question = prompt('Ask Claude about the factory:');
-    if (question) {
-        askClaude(question);
-    }
-};
 window.launchScenario = launchScenario;
 window.stopScenario = stopScenario;
 window.stopInjection = stopInjection;
@@ -182,16 +176,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Setup chat input Enter key handler
-    const chatInput = document.getElementById('chat-input');
-    if (chatInput) {
-        chatInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                sendChatMessage();
+    // Chat event delegation - works for original and modal clones
+    document.addEventListener('keypress', (e) => {
+        if (e.target?.classList?.contains('chat-input') && e.key === 'Enter') {
+            e.preventDefault();
+            sendChatMessage(e.target);
+        }
+    });
+    
+    document.addEventListener('input', (e) => {
+        if (e.target?.classList?.contains('chat-input')) {
+            const messages = e.target.closest('.chat-body, .chat-wrapper')?.querySelector('.chat-messages');
+            if (messages) messages.scrollTop = messages.scrollHeight;
+        }
+    });
+    
+    document.addEventListener('click', (e) => {
+        if (e.target?.classList?.contains('chat-send')) {
+            const container = e.target.closest('.chat-body, .chat-wrapper');
+            const input = container?.querySelector('.chat-input');
+            sendChatMessage(input);
+        }
+        if (e.target?.classList?.contains('chat-scroll-btn')) {
+            const container = e.target.closest('.chat-body, .chat-wrapper, .card');
+            const messages = container?.querySelector('.chat-messages');
+            if (messages) {
+                messages.scrollTo({ top: messages.scrollHeight, behavior: 'smooth' });
+                e.target.classList.remove('visible');
             }
-        });
-    }
+        }
+    });
+    
+    document.addEventListener('scroll', (e) => {
+        if (e.target?.classList?.contains('chat-messages')) {
+            updateScrollToBottomBtn(e.target);
+        }
+    }, true); // capture phase for scroll
 
     // Event delegation for all expand buttons
     document.addEventListener('click', (e) => {

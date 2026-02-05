@@ -224,6 +224,11 @@ export function filterModalInsights(filterType, clickedTab) {
 /**
  * Expand card to modal
  */
+// Track observer for syncing original card to modal clone
+let cardSyncObserver = null;
+let cardSyncTimeout = null;
+let currentModalClone = null;
+
 export function expandCard(cardElement, title) {
     const overlay = document.getElementById('card-modal-overlay');
     const modalTitle = document.getElementById('card-modal-title');
@@ -234,18 +239,77 @@ export function expandCard(cardElement, title) {
         return;
     }
 
-    const clone = cardElement.cloneNode(true);
-    const titleEl = clone.querySelector('.card-title');
-    if (titleEl) titleEl.remove();
+    const createClone = () => {
+        const clone = cardElement.cloneNode(true);
+        const titleEl = clone.querySelector('.card-title');
+        if (titleEl) titleEl.remove();
+        clone.querySelectorAll('[id]').forEach(el => {
+            el.id = el.id + '-modal-clone';
+        });
+        return clone;
+    };
 
-    const elementsWithIds = clone.querySelectorAll('[id]');
-    elementsWithIds.forEach(el => {
-        el.id = el.id + '-modal-clone';
-    });
+    const isAtBottom = (el) => el.scrollHeight - el.scrollTop <= el.clientHeight + 50;
 
+    const syncToModal = () => {
+        if (!currentModalClone) return;
+        
+        // Check which scrollable elements in original are at bottom
+        const atBottom = new Map();
+        cardElement.querySelectorAll('*').forEach((el, i) => {
+            if (el.scrollHeight > el.clientHeight) {
+                atBottom.set(i, isAtBottom(el));
+            }
+        });
+        
+        // Save scroll positions for elements NOT at bottom
+        const scrollPositions = new Map();
+        currentModalClone.querySelectorAll('*').forEach((el, i) => {
+            if ((el.scrollTop || el.scrollLeft) && !atBottom.get(i)) {
+                scrollPositions.set(i, { top: el.scrollTop, left: el.scrollLeft });
+            }
+        });
+        
+        // Sync innerHTML of matching elements instead of full re-clone
+        const freshClone = createClone();
+        currentModalClone.innerHTML = freshClone.innerHTML;
+        
+        // Restore scroll positions or scroll to bottom if original is at bottom
+        currentModalClone.querySelectorAll('*').forEach((el, i) => {
+            if (atBottom.get(i)) {
+                el.scrollTop = el.scrollHeight;
+            } else {
+                const pos = scrollPositions.get(i);
+                if (pos) {
+                    el.scrollTop = pos.top;
+                    el.scrollLeft = pos.left;
+                }
+            }
+        });
+    };
+
+    currentModalClone = createClone();
     modalTitle.textContent = title;
     modalContent.innerHTML = '';
-    modalContent.appendChild(clone);
+    modalContent.appendChild(currentModalClone);
+    
+    // Initial scroll: match original's scroll state
+    cardElement.querySelectorAll('*').forEach((el, i) => {
+        if (el.scrollHeight > el.clientHeight) {
+            const cloneEls = currentModalClone.querySelectorAll('*');
+            if (cloneEls[i]) {
+                cloneEls[i].scrollTop = isAtBottom(el) ? cloneEls[i].scrollHeight : el.scrollTop;
+            }
+        }
+    });
+
+    // Observe original card and sync changes to clone (debounced)
+    if (cardSyncObserver) cardSyncObserver.disconnect();
+    cardSyncObserver = new MutationObserver(() => {
+        clearTimeout(cardSyncTimeout);
+        cardSyncTimeout = setTimeout(syncToModal, 50);
+    });
+    cardSyncObserver.observe(cardElement, { childList: true, subtree: true, characterData: true, attributes: true });
 
     overlay.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -331,6 +395,14 @@ export function reinitChartsInModal(modalContent) {
  * Close card modal
  */
 export function closeCardModal() {
+    // Stop syncing original card
+    if (cardSyncObserver) {
+        cardSyncObserver.disconnect();
+        cardSyncObserver = null;
+    }
+    clearTimeout(cardSyncTimeout);
+    currentModalClone = null;
+    
     // Destroy modal chart instances to prevent memory leak
     modalChartInstances.forEach(chart => chart.destroy());
     modalChartInstances.length = 0;

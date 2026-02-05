@@ -90,6 +90,38 @@ docker compose --env-file ../.env -f docker-compose.local.yml down -v
 
 ## AWS Deployment
 
+### Manual Backend Deployment
+
+The ECS task definition uses **ARM64** architecture.
+
+```bash
+# Login to ECR
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com
+
+# Build for ARM64
+docker build --platform linux/arm64 -t <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/edgemind-prod-backend:latest .
+
+# Push
+docker push <ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/edgemind-prod-backend:latest
+
+# Force ECS deployment
+aws ecs update-service --region us-east-1 --cluster edgemind-prod-cluster --service edgemind-prod-backend --force-new-deployment
+```
+
+> **Cross-compilation:** On x86/amd64 machines, `--platform linux/arm64` requires QEMU emulation. Install with:
+> - Linux: `docker run --privileged --rm tonistiigi/binfmt --install arm64`
+> - Windows: Enable in Docker Desktop settings under "Features in development" → "Use containerd"
+
+### Knowledge Base Sync
+
+Sync documents and images to Bedrock Knowledge Base:
+
+```bash
+./sync-kb.sh
+```
+
+Supported formats: PDF, TXT, MD, HTML, DOC/DOCX, CSV, XLS/XLSX, PNG, JPEG (images max 3.75MB).
+
 ### EC2 (Legacy)
 
 `deploy-ec2.sh` - Deploys to a single EC2 instance. **Note:** Contains hardcoded values that need updating.

@@ -18,7 +18,8 @@
       "env": { "browser": true },
       "parserOptions": { "sourceType": "module" },
       "globals": {
-        "Chart": "readonly"
+        "Chart": "readonly",
+        "marked": "readonly"
       }
     },
     {

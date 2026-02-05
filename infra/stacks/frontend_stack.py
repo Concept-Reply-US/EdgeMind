@@ -27,14 +27,20 @@ class FrontendStack(Stack):
         alb: elbv2.IApplicationLoadBalancer,
         project_name: str = "edgemind",
         environment: str = "prod",
+        resource_suffix: str = "",
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Build resource name prefix
+        name_prefix = f"{project_name}-{environment}"
+        # Bucket name prefix: use suffix if provided, otherwise just name_prefix
+        bucket_name_prefix = f"{name_prefix}-{resource_suffix}" if resource_suffix else name_prefix
+
         # S3 bucket for frontend static files
         self.frontend_bucket = s3.Bucket(
             self, "FrontendBucket",
-            bucket_name=f"{project_name}-{environment}-frontend",
+            bucket_name=f"{bucket_name_prefix}-frontend",
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.DESTROY,
@@ -51,7 +57,7 @@ class FrontendStack(Stack):
         # Cache Policy for static assets (aggressive caching)
         static_cache_policy = cloudfront.CachePolicy(
             self, "StaticCachePolicy",
-            cache_policy_name=f"{project_name}-{environment}-static-cache",
+            cache_policy_name=f"{name_prefix}-static-cache",
             comment="Cache policy for static frontend assets",
             default_ttl=Duration.days(1),
             max_ttl=Duration.days(365),
@@ -66,7 +72,7 @@ class FrontendStack(Stack):
         # Cache Policy for API (no caching)
         api_cache_policy = cloudfront.CachePolicy(
             self, "APICachePolicy",
-            cache_policy_name=f"{project_name}-{environment}-api-cache",
+            cache_policy_name=f"{name_prefix}-api-cache",
             comment="No-cache policy for API requests",
             default_ttl=Duration.seconds(0),
             max_ttl=Duration.seconds(1),
@@ -85,7 +91,7 @@ class FrontendStack(Stack):
         # Origin Request Policy for API (forward essential headers)
         api_origin_request_policy = cloudfront.OriginRequestPolicy(
             self, "APIOriginRequestPolicy",
-            origin_request_policy_name=f"{project_name}-{environment}-api",
+            origin_request_policy_name=f"{name_prefix}-api",
             comment="Forward essential headers for API requests",
             cookie_behavior=cloudfront.OriginRequestCookieBehavior.all(),
             header_behavior=cloudfront.OriginRequestHeaderBehavior.allow_list(
@@ -102,7 +108,7 @@ class FrontendStack(Stack):
         # CRITICAL: These headers are required for WebSocket upgrade handshake
         websocket_origin_request_policy = cloudfront.OriginRequestPolicy(
             self, "WebSocketOriginRequestPolicy",
-            origin_request_policy_name=f"{project_name}-{environment}-websocket",
+            origin_request_policy_name=f"{name_prefix}-websocket",
             comment="Forward WebSocket headers for connection upgrade",
             cookie_behavior=cloudfront.OriginRequestCookieBehavior.all(),
             header_behavior=cloudfront.OriginRequestHeaderBehavior.allow_list(
@@ -121,7 +127,7 @@ class FrontendStack(Stack):
         # CloudFront logs bucket (must be created before distribution)
         log_bucket = s3.Bucket(
             self, "CloudFrontLogBucket",
-            bucket_name=f"{project_name}-{environment}-cloudfront-logs",
+            bucket_name=f"{bucket_name_prefix}-cloudfront-logs",
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
             removal_policy=RemovalPolicy.DESTROY,
@@ -142,6 +148,7 @@ class FrontendStack(Stack):
         )
 
         # ALB Origin for backend API and WebSocket
+        # Custom header for origin verification - ALB rejects requests without it
         alb_origin = origins.LoadBalancerV2Origin(
             alb,
             protocol_policy=cloudfront.OriginProtocolPolicy.HTTP_ONLY,
@@ -149,6 +156,9 @@ class FrontendStack(Stack):
             connection_attempts=3,
             connection_timeout=Duration.seconds(10),
             read_timeout=Duration.seconds(60),  # Increased for WebSocket
+            custom_headers={
+                "X-Origin-Verify": "edgemind-cloudfront-origin-2026"
+            }
         )
 
         # CloudFront Distribution
@@ -253,6 +263,6 @@ class FrontendStack(Stack):
 
         CfnOutput(
             self, "S3UploadCommand",
-            value=f"aws s3 sync ./ s3://{self.frontend_bucket.bucket_name}/ --exclude '*' --include '*.html' --profile reply",
-            description="Command to upload frontend files to S3"
+            value=f"aws s3 sync ./ s3://{self.frontend_bucket.bucket_name}/ --exclude '*' --include '*.html'",
+            description="Command to upload frontend files to S3 (add --profile <name> if needed)"
         )

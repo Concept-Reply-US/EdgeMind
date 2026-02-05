@@ -44,3 +44,9 @@ coverage/
 
 # Backup files from sed
 *.bak
+
+# AgentCore CLI
+.bedrock_agentcore*
+
+# Kiro tasks (local planning)
+.kiro/tasks/
