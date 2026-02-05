@@ -67,6 +67,7 @@ services:
       - MAINTAINX_BASE_URL=${MAINTAINX_BASE_URL:-https://api.getmaintainx.com/v1}
       - MAINTAINX_DEFAULT_LOCATION_ID=${MAINTAINX_DEFAULT_LOCATION_ID:-}
       - MAINTAINX_DEFAULT_ASSIGNEE_ID=${MAINTAINX_DEFAULT_ASSIGNEE_ID:-}
+      - AWS_ACCOUNT_ID=${AWS_ACCOUNT_ID:-}
     depends_on:
       chromadb:
         condition: service_healthy
