@@ -97,7 +97,7 @@ window.handleSuggestedQuestion = handleSuggestedQuestion;
 window.askClaudeQuestion = function() {
     const question = prompt('Ask Claude about the factory:');
     if (question) {
-        askClaude(question);
+        sendChatMessage(question);
     }
 };
 window.launchScenario = launchScenario;
