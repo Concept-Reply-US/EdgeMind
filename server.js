@@ -5,13 +5,17 @@ const WebSocket = require('ws');
 const express = require('express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
-const { influxDB, writeApi, queryApi, Point, parseTopicToInflux, writeSparkplugMetric } = require('./lib/influx/client');
+const { writeApi, queryApi, parseTopicToInflux, writeSparkplugMetric } = require('./lib/influx/client');
 const { createCmmsProvider } = require('./lib/cmms-interface');
 const aiModule = require('./lib/ai');
+const { parseJsonValue } = require('./lib/ai/tools');
 const vectorStore = require('./lib/vector');
 const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/sparkplug/decoder');
 const { createAgentCoreClient } = require('./lib/agentcore');
 const demoEngine = require('./lib/demo/engine');
+
+// AgentCore client (initialized if configured)
+const agentCoreClient = createAgentCoreClient();
 
 // Foundation modules
 const CONFIG = require('./lib/config');
@@ -82,7 +86,7 @@ function parseToolStream(line, res) {
     let parsed = JSON.parse(content);
     // Handle double-encoded JSON
     if (typeof parsed === 'string' && parsed.startsWith('{')) {
-      try { parsed = JSON.parse(parsed); } catch {}
+      try { parsed = JSON.parse(parsed); } catch { /* ignore parse errors */ }
     }
     if (parsed.type === 'tool_use') {
       res.write(`data: ${JSON.stringify({ type: 'tool', name: formatToolName(parsed.name || 'tool') })}\n\n`);
@@ -624,7 +628,6 @@ app.get('/api/trends', async (req, res) => {
 // Shared AgentCore Runtime client
 const agentRuntime = require('./lib/agentcore/runtime');
 const invokeAgent = agentRuntime.invoke;
-const useAgentCoreRuntime = agentRuntime.useRuntime;
 
 // Chat handler for /api/agent/chat
 async function handleChat(req, res) {
@@ -656,7 +659,7 @@ async function handleChat(req, res) {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      while (true) {
+      for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         for (const line of decoder.decode(value, { stream: true }).split('\n')) parseToolStream(line, res);

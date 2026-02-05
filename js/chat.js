@@ -123,7 +123,7 @@ export async function sendChatMessage(sourceInput = null) {
         const decoder = new TextDecoder();
         let lastWasTool = false;
         
-        while (true) {
+        for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
             
@@ -205,7 +205,7 @@ export function subscribeChatContainer(messagesEl, inputEl, sendBtnEl) {
         updateScrollToBottomBtn(messagesEl);
     };
     
-    const onError = (e) => {
+    const onError = (_e) => {
         if (assistantBubble) {
             assistantBubble.textContent = 'Error: Could not reach assistant';
             assistantBubble.closest('.chat-message')?.classList.remove('streaming');
