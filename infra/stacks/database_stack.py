@@ -33,15 +33,19 @@ class DatabaseStack(Stack):
         influxdb_secret: secretsmanager.ISecret,
         project_name: str = "edgemind",
         environment: str = "prod",
+        resource_suffix: str = "",
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Build resource name prefix (includes suffix if provided)
+        name_prefix = f"{project_name}-{environment}"
 
         # EFS File System for InfluxDB data persistence
         self.file_system = efs.FileSystem(
             self, "InfluxDBFileSystem",
             vpc=vpc,
-            file_system_name=f"{project_name}-{environment}-influxdb-efs",
+            file_system_name=f"{name_prefix}-influxdb-efs",
             security_group=efs_security_group,
             encrypted=True,
             lifecycle_policy=efs.LifecyclePolicy.AFTER_14_DAYS,
@@ -68,7 +72,7 @@ class DatabaseStack(Stack):
         # Task Definition for InfluxDB
         task_definition = ecs.FargateTaskDefinition(
             self, "InfluxDBTaskDef",
-            family=f"{project_name}-{environment}-influxdb",
+            family=f"{name_prefix}-influxdb",
             cpu=512,  # 0.5 vCPU
             memory_limit_mib=1024,  # 1 GB
             runtime_platform=ecs.RuntimePlatform(
@@ -97,7 +101,7 @@ class DatabaseStack(Stack):
         # SECURITY: Retention extended to 30 days for security incident investigation
         log_group = logs.LogGroup(
             self, "InfluxDBLogGroup",
-            log_group_name=f"/ecs/{project_name}-{environment}-influxdb",
+            log_group_name=f"/ecs/{name_prefix}-influxdb",
             retention=logs.RetentionDays.ONE_MONTH,
             removal_policy=RemovalPolicy.DESTROY
         )
@@ -169,7 +173,7 @@ class DatabaseStack(Stack):
             self, "InfluxDBService",
             cluster=ecs_cluster,
             task_definition=task_definition,
-            service_name=f"{project_name}-{environment}-influxdb",
+            service_name=f"{name_prefix}-influxdb",
             desired_count=1,
             min_healthy_percent=0,  # Allow service to scale down during Spot interruptions
             max_healthy_percent=200,  # Allow new task to start before stopping old
@@ -242,7 +246,7 @@ class DatabaseStack(Stack):
         # Task Definition for ChromaDB
         chromadb_task_definition = ecs.FargateTaskDefinition(
             self, "ChromaDBTaskDef",
-            family=f"{project_name}-{environment}-chromadb",
+            family=f"{name_prefix}-chromadb",
             cpu=256,  # 0.25 vCPU - ChromaDB is lightweight
             memory_limit_mib=512,  # 512 MB
             runtime_platform=ecs.RuntimePlatform(
@@ -270,7 +274,7 @@ class DatabaseStack(Stack):
         # CloudWatch Logs for ChromaDB
         chromadb_log_group = logs.LogGroup(
             self, "ChromaDBLogGroup",
-            log_group_name=f"/ecs/{project_name}-{environment}-chromadb",
+            log_group_name=f"/ecs/{name_prefix}-chromadb",
             retention=logs.RetentionDays.ONE_MONTH,
             removal_policy=RemovalPolicy.DESTROY
         )

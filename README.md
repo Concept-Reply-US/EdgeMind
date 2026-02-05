@@ -79,23 +79,29 @@ Open http://localhost:3000 in your browser to see the dashboard.
 
 ## Local Development
 
+### Option 1: Full Stack via Script (Recommended)
+
 ```bash
-# Install dependencies
+cd "Deployment Scripts"
+./local-deploy.sh
+```
+
+This handles everything: prerequisites check, `.env` setup, Docker containers (InfluxDB, ChromaDB, agents), and the backend. See [Deployment Scripts/README.md](Deployment%20Scripts/README.md) for details.
+
+### Option 2: Node.js with Hot Reload
+
+For frontend/backend development with live reload:
+
+```bash
+# Start dependencies
+docker compose up -d influxdb
+
+# Install and run with hot reload
 npm install
-
-# Start InfluxDB (if not using Docker Compose)
-docker run -d --name influxdb -p 8086:8086 \
-  -e DOCKER_INFLUXDB_INIT_MODE=setup \
-  -e DOCKER_INFLUXDB_INIT_USERNAME=admin \
-  -e DOCKER_INFLUXDB_INIT_PASSWORD=proveit2026 \
-  -e DOCKER_INFLUXDB_INIT_ORG=proveit \
-  -e DOCKER_INFLUXDB_INIT_BUCKET=factory \
-  -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=proveit-factory-token-2026 \
-  influxdb:2.7
-
-# Start server with hot reload
 npm run dev
 ```
+
+Note: This runs only the backend + InfluxDB. Agents and ChromaDB won't be available.
 
 ## API Endpoints
 
@@ -109,7 +115,8 @@ npm run dev
 | `GET /api/schema/hierarchy` | Topic hierarchy: Enterprise > Site > Area > Machine |
 | `GET /api/factory/status` | Hierarchical OEE status by enterprise and site |
 
-See [CLAUDE.md](CLAUDE.md) for complete API documentation and WebSocket message types.
+Full API documentation available at `/api/docs` (Swagger UI).
+
 
 ## Environment Variables
 
@@ -131,17 +138,30 @@ See [CLAUDE.md](CLAUDE.md) for complete API documentation and WebSocket message 
 
 ```
 EdgeMind/
-├── server.js                  # Backend: MQTT, InfluxDB, WebSocket, Claude
-├── index.html                 # Live dashboard (production)
-├── factory-live.html          # Live dashboard (development)
-├── factory-command-center.html # Static mockup (no backend)
+├── server.js                  # Backend: MQTT, InfluxDB, WebSocket, AI agents
+├── js/                        # Frontend JavaScript files
+├── index.html                 # Live dashboard
+├── css/                       # Frontend Stylesheets
 ├── docker-compose.yml         # Docker Compose configuration
 ├── Dockerfile                 # Container build configuration
 ├── .env.template              # Environment variable template
 ├── CLAUDE.md                  # AI-assisted development guide
+├── README.md                  # This file
 ├── CONTRIBUTING.md            # Contribution guidelines
-└── docs/
-    └── edgemind_architecture_python.png  # Architecture diagram
+├── agent/                     # AgentCore agents (Strands SDK)
+│   ├── chat/                  # Chat assistant agent
+│   ├── anomaly/               # Anomaly detection agent
+│   └── troubleshoot/          # Equipment troubleshooting agent
+├── lib/                       # Backend modules
+│   ├── agentcore/             # AgentCore runtime client
+│   ├── ai/                    # AI analysis module
+│   ├── oee/                   # OEE calculation
+│   └── schema/                # Factory schema discovery
+├── infra/                     # AWS CDK infrastructure
+├── Deployment Scripts/        # Deployment utilities
+│   └── deploy-agents.sh       # AgentCore agent deployment
+├── knowledge-base/            # SOP documents for KB
+└── docs/                      # Documentation
 ```
 
 ## Contributing

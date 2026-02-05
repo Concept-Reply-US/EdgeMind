@@ -37,14 +37,20 @@ class BackendStack(Stack):
         maintainx_secret: secretsmanager.ISecret,
         project_name: str = "edgemind",
         environment: str = "prod",
+        resource_suffix: str = "",
+        bedrock_model_id: str = "us.anthropic.claude-sonnet-4-20250514-v1:0",
+        cpu_architecture: str = "ARM64",
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
+        # Build resource name prefix (includes suffix if provided)
+        name_prefix = f"{project_name}-{environment}"
+
         # ECR Repository - import existing repository
         # The ECR repo is created separately (manually or via CI/CD) to avoid
         # chicken-and-egg problems with ECS needing an image before the stack deploys
-        ecr_repo_name = f"{project_name}-{environment}-backend"
+        ecr_repo_name = f"{name_prefix}-backend"
         self.ecr_repository = ecr.Repository.from_repository_name(
             self, "BackendRepository",
             repository_name=ecr_repo_name
@@ -54,7 +60,7 @@ class BackendStack(Stack):
         self.alb = elbv2.ApplicationLoadBalancer(
             self, "BackendALB",
             vpc=vpc,
-            load_balancer_name=f"{project_name}-{environment}-alb",
+            load_balancer_name=f"{name_prefix}-alb",
             internet_facing=True,
             security_group=alb_security_group,
             vpc_subnets=ec2.SubnetSelection(
@@ -66,7 +72,7 @@ class BackendStack(Stack):
         target_group = elbv2.ApplicationTargetGroup(
             self, "BackendTargetGroup",
             vpc=vpc,
-            target_group_name=f"{project_name}-{environment}-tg",
+            target_group_name=f"{name_prefix}-tg",
             port=3000,
             protocol=elbv2.ApplicationProtocol.HTTP,
             target_type=elbv2.TargetType.IP,
@@ -84,33 +90,41 @@ class BackendStack(Stack):
             stickiness_cookie_name="EDGEMIND_SESSION"
         )
 
-        # HTTP Listener
-        # SECURITY TODO: Add HTTPS listener with ACM certificate for production
-        # To add HTTPS:
-        # 1. Create ACM certificate for your domain
-        # 2. Add HTTPS listener:
-        #    https_listener = self.alb.add_listener("HTTPSListener",
-        #        port=443, protocol=elbv2.ApplicationProtocol.HTTPS,
-        #        certificates=[certificate],
-        #        default_action=elbv2.ListenerAction.forward([target_group]))
-        # 3. Redirect HTTP to HTTPS:
-        #    http_listener.add_action("HTTPRedirect",
-        #        action=elbv2.ListenerAction.redirect(protocol="HTTPS", port="443"))
+        # HTTP Listener with CloudFront origin verification
+        # Requires X-Origin-Verify header to prevent direct ALB access
         http_listener = self.alb.add_listener(
-            "HTTPListener",
+            "HTTPListener", 
             port=80,
             protocol=elbv2.ApplicationProtocol.HTTP,
-            default_action=elbv2.ListenerAction.forward([target_group])
+            default_action=elbv2.ListenerAction.fixed_response(
+                status_code=403,
+                content_type="text/plain",
+                message_body="Forbidden"
+            )
+        )
+        
+        # Forward to target group only if custom header matches
+        http_listener.add_action(
+            "ForwardWithHeaderCheck",
+            priority=1,
+            conditions=[
+                elbv2.ListenerCondition.http_header(
+                    "X-Origin-Verify",
+                    ["edgemind-cloudfront-origin-2026"]
+                )
+            ],
+            action=elbv2.ListenerAction.forward([target_group])
         )
 
         # Task Definition
+        arch = ecs.CpuArchitecture.ARM64 if cpu_architecture.upper() == "ARM64" else ecs.CpuArchitecture.X86_64
         task_definition = ecs.FargateTaskDefinition(
             self, "BackendTaskDef",
-            family=f"{project_name}-{environment}-backend",
+            family=f"{name_prefix}-backend",
             cpu=512,  # 0.5 vCPU
             memory_limit_mib=1024,  # 1 GB
             runtime_platform=ecs.RuntimePlatform(
-                cpu_architecture=ecs.CpuArchitecture.X86_64,
+                cpu_architecture=arch,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX
             )
         )
@@ -146,6 +160,26 @@ class BackendStack(Stack):
             )
         )
 
+        # Grant AgentCore Runtime invocation permissions
+        task_definition.task_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["bedrock-agentcore:InvokeAgentRuntime"],
+                resources=[
+                    f"arn:aws:bedrock-agentcore:{self.region}:{self.account}:runtime/*",
+                ]
+            )
+        )
+        
+        # Grant SSM read for agent runtime IDs
+        task_definition.task_role.add_to_policy(
+            iam.PolicyStatement(
+                effect=iam.Effect.ALLOW,
+                actions=["ssm:GetParametersByPath"],
+                resources=[f"arn:aws:ssm:{self.region}:{self.account}:parameter/edgemind/agents/*"]
+            )
+        )
+
         # Grant Secrets Manager read permissions
         mqtt_secret.grant_read(task_definition.task_role)
         influxdb_secret.grant_read(task_definition.task_role)
@@ -155,7 +189,7 @@ class BackendStack(Stack):
         # SECURITY: Retention extended to 30 days for security incident investigation
         log_group = logs.LogGroup(
             self, "BackendLogGroup",
-            log_group_name=f"/ecs/{project_name}-{environment}-backend",
+            log_group_name=f"/ecs/{name_prefix}-backend",
             retention=logs.RetentionDays.ONE_MONTH,
             removal_policy=RemovalPolicy.DESTROY
         )
@@ -175,12 +209,12 @@ class BackendStack(Stack):
                 "PORT": "3000",
                 "NODE_ENV": "production",
                 "AWS_REGION": self.region,
+                "AWS_ACCOUNT_ID": self.account,
+                "BEDROCK_MODEL_ID": bedrock_model_id,
                 # ChromaDB service discovery URL (via Cloud Map)
                 "CHROMA_HOST": "chromadb.edgemind.local",
                 "CHROMA_PORT": "8000",
-                # AgentCore (Bedrock Agents) configuration
-                "AGENTCORE_AGENT_ID": "TNVA1PNEZT",
-                "AGENTCORE_ALIAS_ID": "R1EEGTBSIT",
+                # CMMS configuration
                 "CMMS_ENABLED": "true",
                 "CMMS_PROVIDER": "maintainx",
                 "MAINTAINX_BASE_URL": "https://api.getmaintainx.com/v1",
@@ -222,7 +256,7 @@ class BackendStack(Stack):
             self, "BackendService",
             cluster=ecs_cluster,
             task_definition=task_definition,
-            service_name=f"{project_name}-{environment}-backend",
+            service_name=f"{name_prefix}-backend",
             desired_count=1,  # Single instance for cost efficiency (demo environment)
             min_healthy_percent=100,  # Keep existing tasks running during deploy
             max_healthy_percent=200,  # Allow new tasks to start before stopping old
@@ -267,7 +301,7 @@ class BackendStack(Stack):
             self, "ECRRepositoryURI",
             value=self.ecr_repository.repository_uri,
             description="ECR Repository URI for backend Docker image",
-            export_name=f"{project_name}-{environment}-ecr-uri"
+            export_name=f"{name_prefix}-ecr-uri"
         )
 
         CfnOutput(
@@ -280,7 +314,7 @@ class BackendStack(Stack):
             self, "ALBDNSName",
             value=self.alb.load_balancer_dns_name,
             description="Application Load Balancer DNS name",
-            export_name=f"{project_name}-{environment}-alb-dns"
+            export_name=f"{name_prefix}-alb-dns"
         )
 
         CfnOutput(
