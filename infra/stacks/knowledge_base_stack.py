@@ -155,11 +155,10 @@ class KnowledgeBaseStack(Stack):
             ),
             vector_ingestion_configuration=bedrock.CfnDataSource.VectorIngestionConfigurationProperty(
                 chunking_configuration=bedrock.CfnDataSource.ChunkingConfigurationProperty(
-                    chunking_strategy="SEMANTIC",
-                    semantic_chunking_configuration=bedrock.CfnDataSource.SemanticChunkingConfigurationProperty(
-                        max_tokens=512,
-                        buffer_size=0,
-                        breakpoint_percentile_threshold=95,
+                    chunking_strategy="FIXED_SIZE",
+                    fixed_size_chunking_configuration=bedrock.CfnDataSource.FixedSizeChunkingConfigurationProperty(
+                        max_tokens=200,
+                        overlap_percentage=10,
                     ),
                 ),
             ),
