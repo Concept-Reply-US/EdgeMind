@@ -154,7 +154,7 @@ if ! aws iam get-role --role-name "$AGENT_EXEC_ROLE" &>/dev/null; then
           \"bedrock:InvokeModelWithResponseStream\"
         ],
         \"Resource\": [
-          \"arn:aws:bedrock:$REGION::foundation-model/*\",
+          \"arn:aws:bedrock:*::foundation-model/*\",
           \"arn:aws:bedrock:$REGION:$ACCOUNT_ID:inference-profile/*\"
         ]
       }]
