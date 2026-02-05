@@ -116,20 +116,9 @@ else
   KB_ID=""
 fi
 
-# Get Bedrock Model ID from CDK backend stack (if not overridden)
-if [ -z "$BEDROCK_MODEL" ]; then
-  # Try to get from ECS task definition environment
-  TASK_DEF=$(aws ecs describe-services --cluster edgemind-prod-cluster --services edgemind-prod-backend \
-    --query "services[0].taskDefinition" --output text 2>/dev/null || echo "")
-  if [ -n "$TASK_DEF" ]; then
-    BEDROCK_MODEL=$(aws ecs describe-task-definition --task-definition "$TASK_DEF" \
-      --query "taskDefinition.containerDefinitions[0].environment[?name=='BEDROCK_MODEL_ID'].value" --output text 2>/dev/null || echo "")
-  fi
-fi
-if [ -n "$BEDROCK_MODEL" ] && [ "$BEDROCK_MODEL" != "None" ]; then
+if [ -n "$BEDROCK_MODEL" ]; then
   echo "Bedrock Model: $BEDROCK_MODEL"
 else
-  BEDROCK_MODEL=""
   echo "WARNING: BEDROCK_MODEL_ID not set (agents will use their defaults)"
 fi
 
