@@ -361,7 +361,7 @@ aws iam put-role-policy --role-name "$GATEWAY_ROLE" --policy-name "secrets-and-w
         \"Sid\": \"WorkloadIdentityToken\",
         \"Effect\": \"Allow\",
         \"Action\": \"bedrock-agentcore:GetWorkloadAccessToken\",
-        \"Resource\": \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default/workload-identity/*\"
+        \"Resource\": \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default*\"
       }
     ]
   }" 2>/dev/null || true
