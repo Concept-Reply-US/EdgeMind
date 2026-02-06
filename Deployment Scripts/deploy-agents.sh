@@ -370,8 +370,8 @@ aws iam put-role-policy --role-name "$GATEWAY_ROLE" --policy-name "secrets-and-w
         \"Effect\": \"Allow\",
         \"Action\": \"bedrock-agentcore:GetResourceApiKey\",
         \"Resource\": [
-          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:token-vault/default/apikeycredentialprovider/*\",
-          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default/workload-identity/*\"
+          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:token-vault/default*\",
+          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default*\"
         ]
       }
     ]
