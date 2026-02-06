@@ -31,6 +31,13 @@
 #       * foundation-model/* (direct regional calls)
 #       * inference-profile/* (cross-region inference with us.* model IDs)
 #   - Inline policy "gateway-invoke": bedrock-agentcore:InvokeGateway
+#   - Inline policy "cloudwatch-logs": logs:CreateLogGroup, CreateLogStream,
+#     PutLogEvents, DescribeLogStreams, DescribeLogGroups - required for
+#     observability: enabled in agent config
+#   - Inline policy "observability-telemetry": xray:PutTraceSegments etc,
+#     cloudwatch:PutMetricData - X-Ray tracing and CW metrics
+#   - Inline policy "knowledge-base-retrieve": bedrock:Retrieve on KB -
+#     only attached when KB_ID is available from CDK stack
 #
 #   Gateway Role (edgemind-prod-gateway-role):
 #   - Assumed by: bedrock-agentcore.amazonaws.com
@@ -141,28 +148,105 @@ if ! aws iam get-role --role-name "$AGENT_EXEC_ROLE" &>/dev/null; then
         "Action": "sts:AssumeRole"
       }]
     }' > /dev/null
-  
-  # Scoped permissions for agent runtime - InvokeModel only
-  # Includes both foundation-model (direct) and inference-profile (cross-region)
-  aws iam put-role-policy --role-name "$AGENT_EXEC_ROLE" --policy-name "bedrock-invoke" \
-    --policy-document "{
-      \"Version\": \"2012-10-17\",
-      \"Statement\": [{
-        \"Effect\": \"Allow\",
-        \"Action\": [
-          \"bedrock:InvokeModel\",
-          \"bedrock:InvokeModelWithResponseStream\"
-        ],
-        \"Resource\": [
-          \"arn:aws:bedrock:*::foundation-model/*\",
-          \"arn:aws:bedrock:$REGION:$ACCOUNT_ID:inference-profile/*\"
-        ]
-      }]
-    }"
 fi
 
 AGENT_EXEC_ROLE_ARN="arn:aws:iam::$ACCOUNT_ID:role/$AGENT_EXEC_ROLE"
 echo "Agent role: $AGENT_EXEC_ROLE"
+
+# Policies are idempotent (put-role-policy overwrites) - always apply to pick up changes
+# Scoped permissions for agent runtime - InvokeModel only
+# Includes both foundation-model (direct) and inference-profile (cross-region)
+aws iam put-role-policy --role-name "$AGENT_EXEC_ROLE" --policy-name "bedrock-invoke" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [{
+      \"Effect\": \"Allow\",
+      \"Action\": [
+        \"bedrock:InvokeModel\",
+        \"bedrock:InvokeModelWithResponseStream\"
+      ],
+      \"Resource\": [
+        \"arn:aws:bedrock:*::foundation-model/*\",
+        \"arn:aws:bedrock:$REGION:$ACCOUNT_ID:inference-profile/*\"
+      ]
+    }]
+  }"
+
+# CloudWatch Logs permissions (required for observability: enabled)
+aws iam put-role-policy --role-name "$AGENT_EXEC_ROLE" --policy-name "cloudwatch-logs" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"LogGroupManagement\",
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"logs:CreateLogGroup\",
+          \"logs:DescribeLogStreams\"
+        ],
+        \"Resource\": \"arn:aws:logs:$REGION:$ACCOUNT_ID:log-group:/aws/bedrock-agentcore/runtimes/*\"
+      },
+      {
+        \"Sid\": \"LogGroupDiscovery\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"logs:DescribeLogGroups\",
+        \"Resource\": \"arn:aws:logs:$REGION:$ACCOUNT_ID:log-group:*\"
+      },
+      {
+        \"Sid\": \"LogStreamWrite\",
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"logs:CreateLogStream\",
+          \"logs:PutLogEvents\"
+        ],
+        \"Resource\": \"arn:aws:logs:$REGION:$ACCOUNT_ID:log-group:/aws/bedrock-agentcore/runtimes/*:log-stream:*\"
+      }
+    ]
+  }"
+
+# X-Ray and CloudWatch Metrics (required for observability: enabled)
+aws iam put-role-policy --role-name "$AGENT_EXEC_ROLE" --policy-name "observability-telemetry" \
+  --policy-document "{
+    \"Version\": \"2012-10-17\",
+    \"Statement\": [
+      {
+        \"Sid\": \"XRayTracing\",
+        \"Effect\": \"Allow\",
+        \"Action\": [
+          \"xray:PutTraceSegments\",
+          \"xray:PutTelemetryRecords\",
+          \"xray:GetSamplingRules\",
+          \"xray:GetSamplingTargets\"
+        ],
+        \"Resource\": \"*\"
+      },
+      {
+        \"Sid\": \"CloudWatchMetrics\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"cloudwatch:PutMetricData\",
+        \"Resource\": \"*\",
+        \"Condition\": {
+          \"StringEquals\": {
+            \"cloudwatch:namespace\": \"bedrock-agentcore\"
+          }
+        }
+      }
+    ]
+  }"
+
+# Knowledge Base retrieval (only if KB exists)
+if [ -n "$KB_ID" ] && [ "$KB_ID" != "None" ]; then
+  aws iam put-role-policy --role-name "$AGENT_EXEC_ROLE" --policy-name "knowledge-base-retrieve" \
+    --policy-document "{
+      \"Version\": \"2012-10-17\",
+      \"Statement\": [{
+        \"Sid\": \"KnowledgeBaseRetrieve\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"bedrock:Retrieve\",
+        \"Resource\": \"arn:aws:bedrock:$REGION:$ACCOUNT_ID:knowledge-base/$KB_ID\"
+      }]
+    }"
+fi
 
 # ===========================================
 # 2. Setup Gateway + Target + Permissions
