@@ -41,10 +41,13 @@
 #
 #   Gateway Role (edgemind-prod-gateway-role):
 #   - Assumed by: bedrock-agentcore.amazonaws.com
-#   - Inline policy: secretsmanager:GetSecretValue - required because
-#     AgentCore automatically stores API keys in Secrets Manager when you
-#     create an API Key Credential Provider. The gateway retrieves the
-#     secret at runtime to inject into outbound requests.
+#   - Inline policy "secrets-and-workload-access":
+#     * secretsmanager:GetSecretValue - AgentCore stores API keys in
+#       Secrets Manager; gateway retrieves them to inject into requests
+#     * bedrock-agentcore:GetWorkloadAccessToken - gateway needs this
+#       to authenticate via workload identity when calling targets
+#     * bedrock-agentcore:GetResourceApiKey - gateway needs this to
+#       fetch API keys from the token vault credential provider
 #
 #   API Key Credential Provider:
 #   - When created, AgentCore stores the API key in Secrets Manager and
@@ -346,14 +349,32 @@ else
 fi
 
 # Gateway role permissions
-aws iam put-role-policy --role-name "$GATEWAY_ROLE" --policy-name "secrets-access" \
+aws iam put-role-policy --role-name "$GATEWAY_ROLE" --policy-name "secrets-and-workload-access" \
   --policy-document "{
     \"Version\": \"2012-10-17\",
-    \"Statement\": [{
-      \"Effect\": \"Allow\",
-      \"Action\": \"secretsmanager:GetSecretValue\",
-      \"Resource\": \"arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:bedrock-agentcore-identity*\"
-    }]
+    \"Statement\": [
+      {
+        \"Sid\": \"SecretsAccess\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"secretsmanager:GetSecretValue\",
+        \"Resource\": \"arn:aws:secretsmanager:$REGION:$ACCOUNT_ID:secret:bedrock-agentcore-identity*\"
+      },
+      {
+        \"Sid\": \"WorkloadIdentityToken\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"bedrock-agentcore:GetWorkloadAccessToken\",
+        \"Resource\": \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default*\"
+      },
+      {
+        \"Sid\": \"GetResourceApiKey\",
+        \"Effect\": \"Allow\",
+        \"Action\": \"bedrock-agentcore:GetResourceApiKey\",
+        \"Resource\": [
+          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:token-vault/default*\",
+          \"arn:aws:bedrock-agentcore:$REGION:$ACCOUNT_ID:workload-identity-directory/default*\"
+        ]
+      }
+    ]
   }" 2>/dev/null || true
 
 # Agent role permission to invoke gateway
