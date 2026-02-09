@@ -47,6 +47,11 @@ const trendsModule = require('./lib/trends');
 const spcModule = require('./lib/spc');
 const productionModule = require('./lib/production');
 
+// NEW: Trend analysis, SPC, and production tracking modules
+const trendsModule = require('./lib/trends');
+const spcModule = require('./lib/spc');
+const productionModule = require('./lib/production');
+
 // Initialize services
 const app = express();
 
