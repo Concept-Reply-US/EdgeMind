@@ -251,10 +251,10 @@ This file logs architectural decisions (ADRs) with context and trade-offs.
 
 ---
 
-### ADR-008: AWS AgentCore Multi-Agent Architecture (2026-01-16)
+### ADR-008: AWS Bedrock AgentCore for On-Demand Intelligence (2026-01-16, revised 2026-02-09)
 
 **Context:**
-- Dashboard needs to answer complex analytical questions:
+- Dashboard needs to answer complex analytical questions interactively:
   1. "What is impacting my OEE?" - Root cause analysis
   2. "What is the status of my equipment?" - Equipment correlation with AI
   3. "Where is wastage coming from?" - Waste attribution
@@ -266,101 +266,96 @@ This file logs architectural decisions (ADRs) with context and trade-offs.
 - Enterprise C uses ISA-88 batch processing, not continuous OEE
 
 **Decision:**
-- Implement **AWS Bedrock Agents with multi-agent collaboration**
-- Deploy 4 specialized agents:
-  - **OEE Analyst Agent**: A×P×Q understanding, limiting factor identification
-  - **Equipment Health Agent**: State monitoring, downtime tracking, maintenance prediction
-  - **Waste Attribution Agent**: Defect patterns, root cause analysis by line
-  - **Batch Process Agent**: Enterprise C ISA-88 metrics, phase tracking, yield rates
-- Orchestrator agent routes questions to specialists
-- Triggered on-demand via `/api/agent/ask` endpoint (not continuous loop)
-- ChromaDB provides shared memory for agent context
+- Use **AWS Bedrock AgentCore** — a managed agentic platform (distinct from the older Bedrock Agents service)
+- Deploy agents as **Python code via AgentCore Runtime** using the Strands SDK
+- Expose backend REST APIs as agent tools via **AgentCore Gateway** (MCP protocol)
+- Secure tool access with **Workload Identity** and **Token Vault** (API key credential provider)
+- Agent invoked on-demand via `POST /api/agent/chat` with SSE streaming
+
+**AgentCore Components Used:**
+| Component | Usage |
+|-----------|-------|
+| **Runtime** | Serverless agent execution, direct code deploy (`PYTHON_3_10`), public network mode |
+| **Gateway** | Converts backend OpenAPI spec into MCP tools, IAM-authenticated |
+| **Workload Identity** | Gateway authenticates via `GetWorkloadAccessToken` |
+| **Token Vault** | API key credential provider for gateway → backend auth |
+| **Observability** | CloudWatch Logs + X-Ray tracing enabled |
+| **Memory** | Not used (`NO_MEMORY`) — session context managed in-app |
+
+**Current Agent: Chat** (`agent/chat/src/main.py`):
+- Built with **Strands SDK** + `BedrockAgentCoreApp` entrypoint
+- Connects to MCP Gateway for factory API tools (OEE, equipment, batch, etc.)
+- Optional **Bedrock Knowledge Base** integration for SOP retrieval
+- Supports IAM-authenticated MCP in production, plain HTTP locally
+- System prompt covers OEE (Enterprise A/B) and ISA-88 batch (Enterprise C)
+
+**Planned Agents** (not yet implemented):
+- **Troubleshoot Agent** — Equipment diagnostics with SOP-guided resolution
+- **Anomaly Agent** — Continuous trend analysis (may replace or augment the tiered loop in `lib/ai/index.js`)
 
 **Alternatives Considered:**
-- Enhanced Single-Agent Loop → Rejected: User chose multi-agent despite lower complexity option. Single-turn reasoning insufficient for complex questions.
-- Hybrid Simple Loop + On-Demand Agents → Rejected: User explicitly chose full AgentCore over incremental approach.
-
-**Rationale (from Quint FPF analysis):**
-1. **R_eff: 1.00** - All validation checks passed
-2. **Multi-agent GA (March 2025)**: AWS Blog confirms production-ready
-3. **CDK Support**: Both CfnAgent (L1) and Agent (L2) constructs available
-4. **Lambda Action Groups**: Well-documented tool execution pattern
-5. **Pricing**: Consumption-based, no per-invocation charge for InvokeAgent
+- Old Bedrock Agents (CfnAgent/Agent constructs, Lambda Action Groups, OpenAPI schemas) → Rejected: AgentCore is the newer, more flexible platform. Strands SDK + MCP Gateway replaces Lambda Action Groups entirely.
+- Enhanced Single-Agent Loop → Rejected: Single-turn reasoning insufficient for complex questions. AgentCore provides managed runtime, tool orchestration, and observability out of the box.
 
 **Consequences:**
-- ✅ Multi-step reasoning for complex questions
-- ✅ Specialized domain knowledge per agent
-- ✅ Tool use during analysis (InfluxDB queries, ChromaDB retrieval)
-- ✅ Scalable architecture for future question types
-- ⚠️ 4-5 day implementation timeline (tight for demo)
-- ⚠️ New infrastructure: Lambdas, IAM roles, OpenAPI schemas
-- ⚠️ Debugging complexity with multiple agents
+- ✅ Multi-step reasoning with tool use for complex questions
+- ✅ MCP Gateway auto-generates tools from OpenAPI spec (no manual Lambda wiring)
+- ✅ Managed serverless runtime — no container orchestration for agents
+- ✅ Built-in observability (CloudWatch, X-Ray) without extra infra
+- ✅ Workload Identity + Token Vault for secure, credential-free tool access
+- ✅ Streaming responses via SSE for real-time chat UX
+- ⚠️ Agent deployment via bash script (`Deployment Scripts/deploy-agents.sh`), not CDK
+- ⚠️ Only chat agent implemented; troubleshoot and anomaly agents still planned
+- ⚠️ AgentCore Memory not yet adopted — potential future enhancement
 
-**Implementation:**
-1. Create `infra/stacks/agentcore_stack.py` CDK stack
-2. Create Lambda Action Group functions (`lib/agentcore/tools.js` or Python)
-3. Define OpenAPI schemas for tools
-4. Add `/api/agent/ask` endpoint to `server.js`
-5. Build frontend chat panel for "Ask Agent" UI
+**Implementation (actual):**
+1. Agent source: `agent/chat/src/main.py` (Strands SDK + BedrockAgentCoreApp)
+2. Agent prompt: `agent/chat/src/prompt.yaml`
+3. Runtime client: `lib/agentcore/runtime.js` (dual-mode: AgentCore SDK or local HTTP)
+4. Agent ARNs stored in SSM: `/edgemind/agents/{chat|troubleshoot|anomaly}`
+5. Deployment: `Deployment Scripts/deploy-agents.sh` (creates IAM roles, Gateway, deploys agent)
+6. Backend endpoint: `POST /api/agent/chat` in `server.js`
+7. Frontend: `js/chat.js` (streaming chat panel)
 
-**Fallback:**
-If blocked, can pivot to enhanced-single-agent-loop in 1-2 days.
+**Correction Note (2026-02-09):**
+Original ADR incorrectly described this as "AWS Bedrock Agents with multi-agent collaboration" using Lambda Action Groups, CfnAgent/Agent CDK constructs, and an orchestrator + 4 specialist agents. That describes the older Bedrock Agents service. AWS Bedrock AgentCore is a separate, newer managed platform with its own Runtime, Gateway (MCP), Identity, Memory, Policy, and Observability components. The actual implementation uses AgentCore with the Strands SDK, not the older Bedrock Agents API.
 
-**DRR Reference:** `.quint/decisions/DRR-2026-01-16-aws-agentcore-multi-agent-architecture-for-edgemind-intelligence.md`
-
-**Revisit:** When AgentCore Memory becomes GA or if demo timeline requires simplification
+**Revisit:**
+- Add troubleshoot and anomaly agents when needed
+- Evaluate AgentCore Memory when ready to replace in-app session management
+- Consider AgentCore Policy for guardrails on tool invocations
+- Move deployment to CDK or GitHub Actions when stabilized
 
 ---
 
-### ADR-009: Cost Optimization - Haiku Specialists + Fargate Spot (2026-01-16)
+### ADR-009: Cost Optimization - Fargate Spot + Single Instance (2026-01-16, revised 2026-02-09)
 
 **Context:**
-- Initial AgentCore deployment used Claude Sonnet for all 5 agents
 - Fargate services (Backend, InfluxDB, ChromaDB) used On-Demand pricing
 - Backend ran 2 instances for HA (overkill for demo environment)
-- Estimated monthly cost: ~$250/month
+- AgentCore Runtime is pay-per-use (no idle cost), so agent compute isn't a Fargate concern
+- Estimated monthly cost before optimization: ~$135/month (Fargate + ALB + S3)
 
 **Decision:**
-- **AgentCore Model Selection:**
-  - Orchestrator: Keep **Claude Sonnet** (needs reasoning for routing decisions)
-  - 4 Specialists: Switch to **Claude Haiku** (~75% cheaper, sufficient for domain-specific tasks)
 - **Fargate Capacity Providers:**
   - InfluxDB + ChromaDB: Use **Fargate Spot** (70% cheaper, tolerable brief interruptions)
   - Backend: Keep On-Demand (user-facing, needs stability)
 - **Instance Count:**
   - Backend: Reduce from 2 to 1 (demo environment, HA unnecessary)
+- **AgentCore Model:** Chat agent model configured via `BEDROCK_MODEL_ID` env var in deploy script (currently Sonnet)
 
 **Alternatives Considered:**
-- All agents on Haiku → Rejected: Orchestrator needs better reasoning for routing
-- All agents on Sonnet → Rejected: Specialists don't need reasoning, just domain knowledge
 - Fargate Spot for Backend → Rejected: User-facing service, interruptions unacceptable
 - NAT Gateway elimination → Already optimized: using public subnets, no NAT Gateway
 
-**Cost Analysis:**
-
-| Component | Before | After | Savings |
-|-----------|--------|-------|---------|
-| Bedrock AI (50 q/day) | $115/mo | ~$35/mo | 70% |
-| Fargate Backend | $43.80/mo | $21.90/mo | 50% |
-| Fargate InfluxDB | $21.90/mo | ~$6.60/mo | 70% |
-| Fargate ChromaDB | $8.95/mo | ~$2.70/mo | 70% |
-| Other (ALB, S3, etc.) | $60/mo | $60/mo | 0% |
-| **TOTAL** | **~$250/mo** | **~$127/mo** | **~49%** |
-
 **Consequences:**
-- ✅ ~49% cost reduction (~$123/month saved)
-- ✅ Specialists still effective for domain-specific tasks
+- ✅ ~40% Fargate cost reduction from Spot pricing on databases
 - ✅ Spot interruptions tolerable for databases (EFS persistence)
-- ⚠️ Haiku may produce less nuanced responses than Sonnet
-- ⚠️ Spot interruptions cause brief database unavailability (~2 min recovery)
+- ✅ AgentCore Runtime is consumption-based — no idle compute cost for agents
 - ⚠️ Single backend instance means no HA during deployments
 
 **Implementation:**
 ```python
-# agentcore_stack.py
-ORCHESTRATOR_MODEL = "anthropic.claude-3-5-sonnet-20241022-v2:0"
-SPECIALIST_MODEL = "anthropic.claude-3-5-haiku-20241022-v1:0"
-
 # database_stack.py - Fargate Spot
 capacity_provider_strategies=[
     ecs.CapacityProviderStrategy(capacity_provider="FARGATE_SPOT", weight=1),
@@ -368,8 +363,10 @@ capacity_provider_strategies=[
 ]
 ```
 
+**Correction Note (2026-02-09):**
+Original ADR referenced Orchestrator + 4 Specialist agents with Sonnet/Haiku model split. That was based on the incorrect multi-agent architecture from original ADR-008. Actual deployment uses AgentCore Runtime (pay-per-use), so agent model costs are consumption-based, not Fargate-based. Cost optimization is primarily about Fargate Spot for databases and right-sizing backend instances.
+
 **Revisit:**
-- If Haiku responses are insufficient, upgrade specific specialists to Sonnet
 - If Spot interruptions are problematic, switch databases back to On-Demand
 - For production (non-demo), consider 2+ backend instances
 
