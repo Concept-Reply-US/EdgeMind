@@ -98,8 +98,6 @@ export function connectWebSocket() {
  * Handle different message types from backend
  */
 export function handleServerMessage(message) {
-    console.log('📨 Received:', message.type);
-
     switch (message.type) {
         case 'initial_state': {
             // Initial data when connecting
