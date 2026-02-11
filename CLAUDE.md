@@ -221,6 +221,7 @@ curl http://localhost:3000/api/schema/measurements
 
 - `POST /api/agent/ask` - Send question to orchestrator agent
 - `GET /api/agent/context` - Get comprehensive factory context for agentic workflows
+- `GET /api/agent/token-usage` - Get token usage tracking (inputTokens, outputTokens, callCount, dailyReset)
 
 ### Health
 
@@ -234,6 +235,8 @@ curl http://localhost:3000/api/schema/measurements
 - `MAINTAINX_API_KEY` - MaintainX API key (required when CMMS enabled)
 - `DISABLE_INSIGHTS` - Set to 'true' to disable AI analysis loop
 - `CESMII_ENABLED` - Set to 'false' to disable CESMII SM Profile support (default: enabled)
+- `BEDROCK_TIER_MODEL_ID` - Model ID for routine analysis (default: Haiku 4.5). Tier 2/3 use this cheaper model. Interactive Q&A still uses `BEDROCK_MODEL_ID` (Sonnet).
+- `AGENT_DAILY_TOKEN_BUDGET` - Daily input token limit for AI analysis (default: 500000). Circuit breaker pauses analysis when exceeded.
 
 Note: AI uses **AWS Bedrock** (not Anthropic API directly). No ANTHROPIC_API_KEY needed.
 

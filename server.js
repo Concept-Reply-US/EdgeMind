@@ -2044,6 +2044,13 @@ app.get('/api/agent/status', (req, res) => {
   }
 });
 
+/**
+ * GET /api/agent/token-usage - Get token usage tracking for cost monitoring
+ */
+app.get('/api/agent/token-usage', (req, res) => {
+  res.json(factoryState.tokenUsage);
+});
+
 // =============================================================================
 // DEMO ENGINE ENDPOINTS
 // =============================================================================
