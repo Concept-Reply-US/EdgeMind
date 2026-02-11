@@ -442,68 +442,75 @@ function createEnergyChart(data) {
 }
 
 /**
+ * Get the selected enterprise from the dropdown or state
+ */
+function getSelectedEnterprise() {
+    const dropdown = document.getElementById('plant-process-enterprise');
+    if (dropdown) return dropdown.value;
+    return state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
+}
+
+/**
+ * Safely fetch JSON from an endpoint
+ */
+async function safeFetch(url, label) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${label}: ${res.status}`);
+        return await res.json();
+    } catch (error) {
+        console.error(`Plant process trends - ${label} error:`, error);
+        return null;
+    }
+}
+
+/**
  * Fetch and render all plant process trend data
  */
 async function fetchAndRender() {
-    try {
-        const enterprise = state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
+    const enterprise = getSelectedEnterprise();
 
-        // Update enterprise badge
-        const enterpriseBadge = document.getElementById('plant-process-enterprise');
-        if (enterpriseBadge) {
-            enterpriseBadge.textContent = enterprise;
+    // Fetch all data in parallel - each request is independent
+    const [spcData, downtimeData, productionData, energyData] = await Promise.all([
+        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=5`, 'SPC measurements'),
+        safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime'),
+        safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production'),
+        safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy')
+    ]);
+
+    // Render SPC independently - don't block other charts
+    if (spcData && spcData.measurements && spcData.measurements.length > 0) {
+        renderSPCDropdown(spcData.measurements);
+        await loadSPCData(spcData.measurements[0].measurement);
+    } else {
+        const select = document.getElementById('plant-spc-measurement-select');
+        if (select) {
+            select.innerHTML = '<option>No SPC measurements available</option>';
         }
-
-        const [spcRes, downtimeRes, productionRes, energyRes] = await Promise.all([
-            fetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=5`),
-            fetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`),
-            fetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`),
-            fetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`)
-        ]);
-
-        if (!spcRes.ok) throw new Error(`SPC measurements: ${spcRes.status}`);
-        if (!downtimeRes.ok) throw new Error(`Downtime: ${downtimeRes.status}`);
-        if (!productionRes.ok) throw new Error(`Production: ${productionRes.status}`);
-        if (!energyRes.ok) throw new Error(`Energy: ${energyRes.status}`);
-
-        const [spcData, downtimeData, productionData, energyData] = await Promise.all([
-            spcRes.json(),
-            downtimeRes.json(),
-            productionRes.json(),
-            energyRes.json()
-        ]);
-
-        // Render SPC dropdown
-        if (spcData.measurements && spcData.measurements.length > 0) {
-            renderSPCDropdown(spcData.measurements);
-            // Load first measurement's data
-            await loadSPCData(spcData.measurements[0].measurement);
-        } else {
-            // No SPC measurements available
-            const select = document.getElementById('plant-spc-measurement-select');
-            if (select) {
-                select.innerHTML = '<option>No SPC measurements available</option>';
-            }
-            const cpkBadge = document.getElementById('spc-cpk-badge');
-            if (cpkBadge) {
-                cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
-            }
+        const cpkBadge = document.getElementById('spc-cpk-badge');
+        if (cpkBadge) {
+            cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
         }
-
-        // Render other charts
-        createDowntimeChart(downtimeData);
-        createProductionChart(productionData);
-        createEnergyChart(energyData);
-
-    } catch (error) {
-        console.error('Plant process trends fetch error:', error);
     }
+
+    // Render other charts independently
+    if (downtimeData) createDowntimeChart(downtimeData);
+    if (productionData) createProductionChart(productionData);
+    if (energyData) createEnergyChart(energyData);
 }
 
 /**
  * Initialize view
  */
 export async function init() {
+    // Wire up enterprise dropdown
+    const dropdown = document.getElementById('plant-process-enterprise');
+    if (dropdown) {
+        const enterprise = state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
+        dropdown.value = enterprise;
+        dropdown.addEventListener('change', () => fetchAndRender());
+    }
+
     await fetchAndRender();
     refreshInterval = setInterval(fetchAndRender, 60000); // 1 minute refresh
 }

@@ -694,6 +694,7 @@
 .chart-card canvas {
     flex: 1;
     min-height: 250px;
+    max-height: 350px;
 }
 
 /* === SPC Dropdown === */
