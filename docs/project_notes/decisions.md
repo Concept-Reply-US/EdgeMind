@@ -614,4 +614,75 @@ Replace the fixed 30-second analysis interval with a three-tier architecture:
 
 ---
 
+### ADR-017: Bidirectional CESMII SM Profile Support (2026-02-10)
+
+**Context:**
+- ProveIt! Conference 2026 (Feb 16-20) requires participants to publish data back to UNS (hard requirement)
+- CESMII SM Profiles are "should attempt" (strongly recommended) per CESMII collaboration section
+- eukodyne/cesmii reference implementation publishes WorkOrderV1 payloads to MQTT every 10 seconds
+- EdgeMind needs to both consume incoming SM Profile payloads AND publish its own data as SM Profile-compliant JSON-LD
+- Reference implementation is Python; EdgeMind is Node.js
+
+**Decision:**
+- Implement **bidirectional** CESMII SM Profile support:
+  - **Consumer (H1):** Detect, validate, and store incoming WorkOrderV1 JSON-LD payloads from MQTT
+  - **Publisher (H2):** Publish EdgeMind's own OEE reports and AI insights as custom SM Profile-compliant JSON-LD back to UNS
+- Port the Python SM Profile validator from eukodyne/cesmii to Node.js (~500-800 lines)
+- Custom profiles use **Method 2: JSON Schema on GitHub** (not CESMII Profile Designer tool)
+- New module: `lib/cesmii/` with validator, detector, publisher, and bundled profile schemas
+- Bundle existing profiles: WorkOrderV1.jsonld, FeedIngredientV1.jsonld
+- Define custom profiles: FactoryInsightV1.jsonld, OEEReportV1.jsonld
+- Include CESMII demo publisher fallback in demo engine (in case eukodyne publisher isn't running at conference)
+
+**Alternatives Considered:**
+- H3: Lightweight Semantic Layer (skip validation, just detect/display) → Rejected: lacks credibility at a conference focused on SM Profiles
+- H4: AI-Powered Profile Interpreter (feed profiles to Claude for semantic reasoning) → Deferred: AI output quality untested (R_eff=0.60), focus on core compliance first. Can be added post-conference.
+- Method 1: CESMII Profile Designer → Not used: JSON Schema on GitHub is simpler, officially supported, and sufficient for hackathon
+
+**Rationale (from FPF analysis):**
+1. **High confidence:** H1 R_eff=1.00, H2 R_eff=0.90 (weakest link: JSON Schema method documented but no ProveIt vendor example seen)
+2. **Publishing is mandatory:** ProveIt 2026 Sponsors Documentation requires publishing data back to UNS — not optional
+3. **Validator portable:** Python validator logic (OPC UA type checking) maps cleanly to Node.js — no native dependencies
+4. **MQTT already works:** Existing `#` subscription catches eukodyne topics; existing `conceptreply` user can publish
+5. **Demo fallback:** Self-contained publisher mitigates risk of eukodyne publisher not running at conference
+
+**Consequences:**
+- ✅ Full ProveIt 2026 compliance (consume from + publish to UNS)
+- ✅ CESMII collaboration requirement met (SM Profiles implemented)
+- ✅ Reusable CESMII module for future SM Profile integrations
+- ✅ Self-contained demo fallback for conference reliability
+- ⚠️ H4 (AI Profile Interpreter) deferred — misses differentiator opportunity
+- ⚠️ JSON Schema method is less formal than Profile Designer registration
+- ⚠️ Custom Node.js validator, not official CESMII .NET libraries
+
+**Implementation Plan:**
+1. Phase 1: `lib/cesmii/` module — profiles, validator, detector (Day 1-2)
+2. Phase 2: Consumer integration — MQTT interception, InfluxDB storage, REST endpoints (Day 2-3)
+3. Phase 3: Publisher — custom profiles, JSON-LD wrapper, MQTT publish (Day 3-4)
+4. Phase 4: Frontend work orders panel + demo fallback (Day 4-5)
+5. Phase 5: Integration testing + demo polish (Day 5-6)
+
+**DRR Reference:** `.fpf/decisions/DRR-001-cesmii-profiles.md`
+
+**Revisit:**
+- Add H4 (AI Profile Interpreter) post-conference as enhancement
+- Register custom profiles on CESMII Profile Designer (Method 1) if needed for formality
+- Expand validator for additional SM Profiles beyond WorkOrderV1
+
+---
+
+### ADR-DRR-001: CESMII SM Profile Integration (2026-02-11)
+- **Context:** ProveIt! Conference 2026 requires demonstration of CESMII SM Profile interoperability
+- **Decision:** Implemented bidirectional CESMII SM Profile support (H1: Consumer + H2: Publisher). H4 (AI Interpreter) deferred.
+- **Approach:** Native JSON-LD consumer with OPC UA type validation (13 types), plus publisher for OEE reports and AI insights
+- **Key choices:**
+  - Treat JSON-LD as plain JSON (no RDF library) -- sufficient for validation
+  - Profile detection via @type + (@context OR profileDefinition) heuristic
+  - Non-strict validation by default (store with warnings, don't reject)
+  - Publisher topics: `edgemind/oee/{enterprise}/{site}` and `edgemind/insights/{enterprise}`
+  - Demo publisher publishes to `Enterprise B/conceptreply/cesmii/WorkOrder`
+- **Trade-offs:** No full RDF/SPARQL support, but dramatically simpler implementation. Custom profiles follow CESMII Method 2 format.
+
+---
+
 <!-- Add new decisions above this line -->
