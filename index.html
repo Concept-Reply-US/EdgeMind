@@ -31,6 +31,7 @@
     <link rel="stylesheet" href="css/footer.css">
     <link rel="stylesheet" href="css/responsive.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body data-theme="coo">
@@ -550,7 +551,11 @@
         <div class="persona-view" data-view="plant-process-trends">
             <div class="view-header">
                 <h2 class="view-title">Process Trend Analysis</h2>
-                <div class="enterprise-badge" id="plant-process-enterprise">Enterprise A</div>
+                <select class="spc-dropdown" id="plant-process-enterprise">
+                    <option value="Enterprise A" selected>Enterprise A</option>
+                    <option value="Enterprise B">Enterprise B</option>
+                    <option value="Enterprise C">Enterprise C</option>
+                </select>
             </div>
 
             <div class="process-trends-grid">

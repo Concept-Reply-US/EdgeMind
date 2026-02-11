@@ -548,48 +548,40 @@ window.selectTimeWindow = function(window) {
 };
 
 /**
+ * Safely fetch JSON from an endpoint
+ */
+async function safeFetch(url, label) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`${label}: ${res.status}`);
+        return await res.json();
+    } catch (error) {
+        console.error(`COO trends - ${label} error:`, error);
+        return null;
+    }
+}
+
+/**
  * Fetch all data and create/update charts
  */
 async function fetchAndRender() {
-    try {
-        // Fetch all data in parallel (existing + new endpoints)
-        const [oeeRes, wasteRes, equipRes, downtimeRes, wastePredRes, oeePredRes] = await Promise.all([
-            fetch('/api/oee/breakdown'),
-            fetch('/api/waste/trends'),
-            fetch('/api/equipment/states'),
-            fetch(`/api/trends/downtime-pareto?window=${selectedTimeWindow}&enterprise=ALL`),
-            fetch(`/api/trends/waste-predictive?window=${selectedTimeWindow}&enterprise=ALL`),
-            fetch(`/api/trends/oee-components?window=${selectedTimeWindow}&enterprise=ALL`)
-        ]);
+    // Fetch all data in parallel - each request is independent
+    const [oeeData, wasteData, equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
+        safeFetch('/api/oee/breakdown', 'OEE breakdown'),
+        safeFetch('/api/waste/trends', 'Waste trends'),
+        safeFetch('/api/equipment/states', 'Equipment states'),
+        safeFetch(`/api/trends/downtime-pareto?window=${selectedTimeWindow}&enterprise=ALL`, 'Downtime Pareto'),
+        safeFetch(`/api/trends/waste-predictive?window=${selectedTimeWindow}&enterprise=ALL`, 'Waste predictive'),
+        safeFetch(`/api/trends/oee-components?window=${selectedTimeWindow}&enterprise=ALL`, 'OEE components')
+    ]);
 
-        if (!oeeRes.ok) throw new Error(`OEE breakdown: ${oeeRes.status}`);
-        if (!wasteRes.ok) throw new Error(`Waste trends: ${wasteRes.status}`);
-        if (!equipRes.ok) throw new Error(`Equipment states: ${equipRes.status}`);
-        if (!downtimeRes.ok) throw new Error(`Downtime Pareto: ${downtimeRes.status}`);
-        if (!wastePredRes.ok) throw new Error(`Waste predictive: ${wastePredRes.status}`);
-        if (!oeePredRes.ok) throw new Error(`OEE components: ${oeePredRes.status}`);
-
-        const [oeeData, wasteData, equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
-            oeeRes.json(),
-            wasteRes.json(),
-            equipRes.json(),
-            downtimeRes.json(),
-            wastePredRes.json(),
-            oeePredRes.json()
-        ]);
-
-        // Create existing charts
-        createOEEChart(oeeData);
-        createWasteChart(wasteData);
-        createEquipmentChart(equipData);
-
-        // Create new predictive charts
-        createDowntimeParetoChart(downtimeData);
-        createWastePredictiveChart(wastePredData);
-        createOEEComponentsChart(oeePredData);
-    } catch (error) {
-        console.error('COO trends fetch error:', error);
-    }
+    // Create each chart independently - failures don't block others
+    if (oeeData) createOEEChart(oeeData);
+    if (wasteData) createWasteChart(wasteData);
+    if (equipData) createEquipmentChart(equipData);
+    if (downtimeData) createDowntimeParetoChart(downtimeData);
+    if (wastePredData) createWastePredictiveChart(wastePredData);
+    if (oeePredData) createOEEComponentsChart(oeePredData);
 }
 
 /**
