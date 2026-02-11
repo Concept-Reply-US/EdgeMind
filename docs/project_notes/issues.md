@@ -147,4 +147,12 @@ Completed work and issue tracking. For quick reference - full details live in gi
 - **Commit**: `65e8219`
 - **Files**: `.github/workflows/deploy.yml`, `.github/workflows/deploy-backend.yml`, `.github/workflows/deploy-frontend.yml`
 
+### 2026-02-11 - CESMII SM Profile Integration
+- **Status**: Completed
+- **Description**: Full bidirectional CESMII SM Profile support
+- **Files:** 10 new files (lib/cesmii/*, css/cesmii.css, js/cesmii.js, 3 test files), 9 modified files
+- **Tests:** 369 tests passing (11 suites), 3 new CESMII test files
+- **Features:** JSON-LD detection, OPC UA validation (13 types), MQTT interception, InfluxDB storage, WebSocket broadcast, REST APIs, frontend panel, OEE/insight publisher, demo work order publisher
+- **Branch:** feature/cesmii
+
 <!-- Add new entries above this line -->

@@ -6,6 +6,7 @@ import { addClaudeInsight, renderActiveFilters } from './insights.js';
 import { addMQTTMessageToStream } from './stream.js';
 import { topicToMeasurement, getEnterpriseParam } from './utils.js';
 import { fetchActiveSensorCount } from './dashboard-data.js';
+import { handleRealtimeWorkOrder } from './cesmii.js';
 
 /**
  * Schedule a reconnection attempt with exponential backoff
@@ -128,6 +129,11 @@ export function handleServerMessage(message) {
                 state.thresholdSettings = message.data.thresholdSettings;
             }
 
+            // Load CESMII work orders from server
+            if (message.data.cesmiiWorkOrders) {
+                state.cesmiiWorkOrders = message.data.cesmiiWorkOrders;
+            }
+
             updateUI();
 
             // Show sleeping agent message if insights are disabled
@@ -232,6 +238,11 @@ export function handleServerMessage(message) {
                 state.thresholdSettings = message.data;
                 console.log('[SETTINGS] Synced from server:', message.data);
             }
+            break;
+
+        case 'cesmii_work_order':
+            // Real-time CESMII work order
+            handleRealtimeWorkOrder(message.data);
             break;
     }
 }

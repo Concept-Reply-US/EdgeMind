@@ -12,6 +12,9 @@ const { parseJsonValue } = require('./lib/ai/tools');
 const vectorStore = require('./lib/vector');
 const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/sparkplug/decoder');
 const demoEngine = require('./lib/demo/engine');
+const cesmiiHandler = require('./lib/cesmii/handler');
+const cesmiiRoutes = require('./lib/cesmii/routes');
+const { isCesmiiPayload } = require('./lib/cesmii/detector');
 
 // Foundation modules
 const CONFIG = require('./lib/config');
@@ -225,6 +228,20 @@ mqttClient.on('connect', async () => {
 
   // Initialize demo engine with MQTT client
   demoEngine.init({ mqttClient });
+
+  // Initialize CESMII SM Profile handler and publisher
+  if (CONFIG.cesmii.enabled) {
+    cesmiiHandler.init({ writeApi, broadcast: broadcastToClients });
+
+    // Initialize publisher for bidirectional flow
+    const cesmiiPublisher = require('./lib/cesmii/publisher');
+    const cesmiiDemoPublisher = require('./lib/cesmii/demo-publisher');
+    cesmiiPublisher.init({ mqttClient });
+    cesmiiRoutes.setPublisher(cesmiiPublisher);
+    cesmiiRoutes.setDemoPublisher(cesmiiDemoPublisher, mqttClient);
+
+    console.log('[CESMII] SM Profile handler and publisher initialized');
+  }
 });
 
 mqttClient.on('error', (error) => {
@@ -304,6 +321,27 @@ mqttClient.on('message', async (topic, message) => {
       // Log Sparkplug decoding errors but don't crash
       console.error(`Sparkplug decode error for topic ${topic}:`, sparkplugError.message);
       return; // EXIT EARLY - don't try JSON parsing on binary data
+    }
+  }
+
+  // CESMII SM PROFILE HANDLING
+  // Check if this is a CESMII JSON-LD payload (after Sparkplug, before standard processing)
+  if (CONFIG.cesmii.enabled) {
+    try {
+      const payloadStr = message.toString();
+
+      // Security: Check payload size before parsing (DoS protection)
+      if (payloadStr.length > 65536) {
+        console.warn(`[CESMII] Payload too large (${payloadStr.length} bytes), skipping`);
+      } else {
+        const parsed = JSON.parse(payloadStr);
+        // Use proper detector function (checks @context or profileDefinition)
+        if (isCesmiiPayload(parsed)) {
+          if (cesmiiHandler.handleCesmiiMessage(actualTopic, parsed, { isInjected })) return;
+        }
+      }
+    } catch (e) {
+      // Not valid JSON, fall through to standard processing
     }
   }
 
@@ -2013,6 +2051,11 @@ app.get('/api/agent/status', (req, res) => {
 // Mount demo engine routes
 app.use('/api/demo', demoEngine.router);
 
+// Mount CESMII SM Profile routes
+if (CONFIG.cesmii.enabled) {
+  app.use('/api/cesmii', cesmiiRoutes.router);
+}
+
 // =============================================================================
 // STUB ENDPOINTS FOR LAMBDA TOOL COMPATIBILITY
 // =============================================================================
@@ -2538,7 +2581,9 @@ wss.on('connection', (ws) => {
       stats: factoryState.stats,
       insightsEnabled: !CONFIG.disableInsights,
       anomalyFilters: factoryState.anomalyFilters,
-      thresholdSettings: factoryState.thresholdSettings
+      thresholdSettings: factoryState.thresholdSettings,
+      cesmiiWorkOrders: factoryState.cesmiiWorkOrders.slice(-20).map(cesmiiHandler.sanitizeWorkOrderForBroadcast),
+      cesmiiStats: factoryState.cesmiiStats
     }
   }));
 
@@ -2575,6 +2620,13 @@ async function shutdown(signal) {
   try {
     // Stop agentic loop intervals/timeouts
     aiModule.stopAgenticLoop();
+
+    // Stop CESMII demo publisher if running
+    if (CONFIG.cesmii.enabled) {
+      const { stopDemoWorkOrders } = require('./lib/cesmii/demo-publisher');
+      stopDemoWorkOrders();
+      console.log('[CESMII] Demo publisher stopped');
+    }
 
     await writeApi.close();
     mqttClient.end();
