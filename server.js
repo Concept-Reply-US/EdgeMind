@@ -245,7 +245,7 @@ mqttClient.on('connect', async () => {
 });
 
 mqttClient.on('error', (error) => {
-  console.error('❌ MQTT Error:', error);
+  console.error('❌ MQTT Error:', error.message);
 });
 
 // parseTopicToInflux is now imported from './lib/influx/client'
@@ -267,7 +267,7 @@ mqttClient.on('message', async (topic, message) => {
     isInjected = true;
     topicParts.splice(1, 1);
     actualTopic = topicParts.join('/');
-    console.log(`[DEMO] Intercepted demo data: ${topic} -> ${actualTopic}`);
+    console.debug(`[DEMO] Intercepted demo data: ${topic} -> ${actualTopic}`);
   }
 
   // SPARKPLUG B PROTOCOL HANDLING
@@ -479,7 +479,7 @@ mqttClient.on('message', async (topic, message) => {
             }
           });
 
-          console.log(`[STATE] ${equipmentKey}: ${stateInfo.name}`);
+          console.debug(`[STATE] ${equipmentKey}: ${stateInfo.name}`);
         }
       }
     }
@@ -515,7 +515,7 @@ mqttClient.on('message', async (topic, message) => {
 
 // Flush InfluxDB writes periodically
 setInterval(() => {
-  writeApi.flush().catch(err => console.error('InfluxDB flush error:', err));
+  writeApi.flush().catch(err => console.error('InfluxDB flush error:', err.message));
 }, 5000);
 
 // Clean up stale equipment state cache entries periodically
@@ -525,7 +525,7 @@ setInterval(() => {
     const lastUpdateMs = new Date(stateData.lastUpdate).getTime();
     if (now - lastUpdateMs > equipmentStateCache.CACHE_TTL_MS) {
       equipmentStateCache.states.delete(key);
-      console.log(`[STATE] Evicted stale equipment: ${key}`);
+      console.debug(`[STATE] Evicted stale equipment: ${key}`);
     }
   }
 }, 60000); // Clean up every minute
@@ -611,7 +611,7 @@ function handleClientRequest(ws, request) {
         data: { filters: factoryState.anomalyFilters }
       });
 
-      console.log(`🔍 Anomaly filters updated: ${validFilters.length} active rules`);
+      console.debug(`🔍 Anomaly filters updated: ${validFilters.length} active rules`);
       break;
       }
   }
@@ -741,7 +741,7 @@ app.post('/api/settings', express.json(), (req, res) => {
       data: factoryState.thresholdSettings
     });
 
-    console.log('[SETTINGS] Updated thresholds:', factoryState.thresholdSettings);
+    console.debug('[SETTINGS] Updated thresholds:', factoryState.thresholdSettings);
     res.json(factoryState.thresholdSettings);
   } catch (error) {
     console.error('Settings update error:', error);
@@ -945,7 +945,7 @@ app.get('/api/schema/measurements', async (req, res) => {
     } catch (refreshError) {
       // If refresh fails but we have cached data, use it and log the error
       if (schemaCache.measurements.size > 0) {
-        console.warn('Schema cache refresh failed, using stale cache:', refreshError.message);
+        console.debug('Schema cache refresh failed, using stale cache:', refreshError.message);
       } else {
         // No cached data available, propagate the error
         throw refreshError;
@@ -1951,7 +1951,7 @@ app.get('/api/schema/classifications', async (req, res) => {
     } catch (refreshError) {
       // If refresh fails but we have cached data, use it and log the error
       if (schemaCache.measurements.size > 0) {
-        console.warn('Schema cache refresh failed, using stale cache:', refreshError.message);
+        console.debug('Schema cache refresh failed, using stale cache:', refreshError.message);
       } else {
         // No cached data available, propagate the error
         throw refreshError;
@@ -2577,7 +2577,7 @@ const wss = new WebSocket.Server({ server, path: '/ws' });
 
 // WebSocket connection handler
 wss.on('connection', (ws) => {
-  console.log('👋 Frontend connected');
+  console.debug('👋 Frontend connected');
 
   ws.send(JSON.stringify({
     type: 'initial_state',
@@ -2611,7 +2611,7 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
-    console.log('👋 Frontend disconnected');
+    console.debug('👋 Frontend disconnected');
   });
 });
 
