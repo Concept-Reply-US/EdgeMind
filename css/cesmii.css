@@ -103,27 +103,15 @@
     letter-spacing: 0.5px;
     padding: 2px 8px;
     border-radius: 4px;
+    --badge-color: #888;
+    --badge-bg: rgba(255, 255, 255, 0.08);
+    background: var(--badge-bg);
+    color: var(--badge-color);
 }
 
-.cesmii-validation-badge.valid {
-    background: rgba(0, 255, 136, 0.15);
-    color: var(--accent-green);
-}
-
-.cesmii-validation-badge.invalid {
-    background: rgba(255, 68, 68, 0.15);
-    color: var(--accent-red);
-}
-
-.cesmii-validation-badge.no_profile {
-    background: rgba(255, 171, 0, 0.15);
-    color: var(--accent-amber);
-}
-
-.cesmii-validation-badge.unvalidated {
-    background: rgba(255, 255, 255, 0.08);
-    color: #888;
-}
+.cesmii-validation-badge.valid { --badge-color: var(--accent-green); --badge-bg: rgba(0, 255, 136, 0.15); }
+.cesmii-validation-badge.invalid { --badge-color: var(--accent-red); --badge-bg: rgba(255, 68, 68, 0.15); }
+.cesmii-validation-badge.no_profile { --badge-color: var(--accent-amber); --badge-bg: rgba(255, 171, 0, 0.15); }
 
 /* Ingredient list */
 .cesmii-ingredient-list {

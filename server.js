@@ -14,7 +14,6 @@ const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/spark
 const demoEngine = require('./lib/demo/engine');
 const cesmiiHandler = require('./lib/cesmii/handler');
 const cesmiiRoutes = require('./lib/cesmii/routes');
-const { isCesmiiPayload } = require('./lib/cesmii/detector');
 
 // Foundation modules
 const CONFIG = require('./lib/config');
@@ -330,9 +329,8 @@ mqttClient.on('message', async (topic, message) => {
     try {
       const payloadStr = message.toString();
       const parsed = JSON.parse(payloadStr);
-      if (isCesmiiPayload(parsed)) {
-        const handled = cesmiiHandler.handleCesmiiMessage(actualTopic, parsed, { isInjected });
-        if (handled) return; // CESMII handled, skip standard processing
+      if (typeof parsed === 'object' && parsed !== null && parsed['@type']) {
+        if (cesmiiHandler.handleCesmiiMessage(actualTopic, parsed, { isInjected })) return;
       }
     } catch (e) {
       // Not valid JSON, fall through to standard processing
