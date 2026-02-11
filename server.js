@@ -14,6 +14,7 @@ const { isSparkplugTopic, decodePayload, extractMetrics } = require('./lib/spark
 const demoEngine = require('./lib/demo/engine');
 const cesmiiHandler = require('./lib/cesmii/handler');
 const cesmiiRoutes = require('./lib/cesmii/routes');
+const { isCesmiiPayload } = require('./lib/cesmii/detector');
 
 // Foundation modules
 const CONFIG = require('./lib/config');
@@ -328,9 +329,16 @@ mqttClient.on('message', async (topic, message) => {
   if (CONFIG.cesmii.enabled) {
     try {
       const payloadStr = message.toString();
-      const parsed = JSON.parse(payloadStr);
-      if (typeof parsed === 'object' && parsed !== null && parsed['@type']) {
-        if (cesmiiHandler.handleCesmiiMessage(actualTopic, parsed, { isInjected })) return;
+
+      // Security: Check payload size before parsing (DoS protection)
+      if (payloadStr.length > 65536) {
+        console.warn(`[CESMII] Payload too large (${payloadStr.length} bytes), skipping`);
+      } else {
+        const parsed = JSON.parse(payloadStr);
+        // Use proper detector function (checks @context or profileDefinition)
+        if (isCesmiiPayload(parsed)) {
+          if (cesmiiHandler.handleCesmiiMessage(actualTopic, parsed, { isInjected })) return;
+        }
       }
     } catch (e) {
       // Not valid JSON, fall through to standard processing
@@ -2574,7 +2582,7 @@ wss.on('connection', (ws) => {
       insightsEnabled: !CONFIG.disableInsights,
       anomalyFilters: factoryState.anomalyFilters,
       thresholdSettings: factoryState.thresholdSettings,
-      cesmiiWorkOrders: factoryState.cesmiiWorkOrders.slice(-20),
+      cesmiiWorkOrders: factoryState.cesmiiWorkOrders.slice(-20).map(cesmiiHandler.sanitizeWorkOrderForBroadcast),
       cesmiiStats: factoryState.cesmiiStats
     }
   }));
@@ -2612,6 +2620,13 @@ async function shutdown(signal) {
   try {
     // Stop agentic loop intervals/timeouts
     aiModule.stopAgenticLoop();
+
+    // Stop CESMII demo publisher if running
+    if (CONFIG.cesmii.enabled) {
+      const { stopDemoWorkOrders } = require('./lib/cesmii/demo-publisher');
+      stopDemoWorkOrders();
+      console.log('[CESMII] Demo publisher stopped');
+    }
 
     await writeApi.close();
     mqttClient.end();

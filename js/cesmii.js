@@ -5,6 +5,7 @@ import { state } from './state.js';
 import { escapeHtml } from './utils.js';
 
 let refreshInterval = null;
+let abortController = null;
 
 /**
  * Format timestamp for display
@@ -97,9 +98,9 @@ function renderStats(stats) {
     if (!el || !stats) return;
 
     el.innerHTML = `
-        <span class="stat-item">Received: <span class="stat-value">${stats.workOrdersReceived || 0}</span></span>
-        <span class="stat-item">Valid: <span class="stat-value">${stats.workOrdersValidated || 0}</span></span>
-        <span class="stat-item">Failed: <span class="stat-value">${stats.workOrdersFailed || 0}</span></span>
+        <span class="stat-item">Received: <span class="stat-value">${escapeHtml(String(stats.workOrdersReceived || 0))}</span></span>
+        <span class="stat-item">Valid: <span class="stat-value">${escapeHtml(String(stats.workOrdersValidated || 0))}</span></span>
+        <span class="stat-item">Failed: <span class="stat-value">${escapeHtml(String(stats.workOrdersFailed || 0))}</span></span>
     `;
 }
 
@@ -129,7 +130,9 @@ function renderProfiles(profiles) {
 async function fetchAndRender() {
     try {
         // Fetch work orders
-        const woRes = await fetch('/api/cesmii/work-orders?limit=50');
+        const woRes = await fetch('/api/cesmii/work-orders?limit=50', {
+            signal: abortController?.signal
+        });
         if (woRes.ok) {
             const data = await woRes.json();
             state.cesmiiWorkOrders = data.workOrders || [];
@@ -137,12 +140,17 @@ async function fetchAndRender() {
         }
 
         // Fetch stats
-        const statsRes = await fetch('/api/cesmii/stats');
+        const statsRes = await fetch('/api/cesmii/stats', {
+            signal: abortController?.signal
+        });
         if (statsRes.ok) {
             const stats = await statsRes.json();
             renderStats(stats);
         }
     } catch (error) {
+        // Ignore abort errors
+        if (error.name === 'AbortError') return;
+
         console.error('CESMII fetch error:', error);
         const listEl = document.getElementById('cesmii-work-orders-list');
         if (listEl) {
@@ -156,12 +164,17 @@ async function fetchAndRender() {
  */
 async function fetchProfiles() {
     try {
-        const res = await fetch('/api/cesmii/profiles');
+        const res = await fetch('/api/cesmii/profiles', {
+            signal: abortController?.signal
+        });
         if (res.ok) {
             const data = await res.json();
             renderProfiles(data.profiles || []);
         }
     } catch (error) {
+        // Ignore abort errors
+        if (error.name === 'AbortError') return;
+
         console.error('CESMII profiles fetch error:', error);
     }
 }
@@ -207,6 +220,12 @@ export function handleRealtimeWorkOrder(data) {
  * Initialize CESMII view
  */
 export async function init() {
+    // Clean up any previous initialization
+    cleanup();
+
+    // Create new abort controller for this initialization
+    abortController = new AbortController();
+
     await fetchAndRender();
     await fetchProfiles();
     refreshInterval = setInterval(fetchAndRender, 30000);
@@ -219,5 +238,9 @@ export function cleanup() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
         refreshInterval = null;
+    }
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
     }
 }

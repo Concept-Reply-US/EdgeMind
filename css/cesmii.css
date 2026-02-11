@@ -188,3 +188,10 @@
     max-height: 500px;
     overflow-y: auto;
 }
+
+/* Responsive breakpoint for mobile */
+@media (max-width: 768px) {
+    .cesmii-grid {
+        grid-template-columns: 1fr;
+    }
+}
