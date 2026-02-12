@@ -1,4 +1,11 @@
 // server.js - Factory Intelligence Backend with InfluxDB + Agentic Claude
+
+// Suppress console.debug in production to reduce log noise
+// Set LOG_LEVEL=debug to re-enable verbose logging
+if (process.env.LOG_LEVEL !== 'debug') {
+  console.debug = () => {};
+}
+
 const mqtt = require('mqtt');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 const WebSocket = require('ws');

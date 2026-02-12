@@ -230,13 +230,14 @@ curl http://localhost:3000/api/schema/measurements
 ## Environment Variables
 
 - `PORT` - HTTP server port (default: 3000)
+- `LOG_LEVEL` - Set to 'debug' to enable verbose console.debug output (default: suppressed)
 - `AWS_REGION` - AWS region for Bedrock (default: us-east-1)
 - `CMMS_ENABLED` - Set to 'true' to enable MaintainX CMMS integration
 - `MAINTAINX_API_KEY` - MaintainX API key (required when CMMS enabled)
 - `DISABLE_INSIGHTS` - Set to 'true' to disable AI analysis loop
 - `CESMII_ENABLED` - Set to 'false' to disable CESMII SM Profile support (default: enabled)
 - `CESMII_IGNORED_PROFILES` - Comma-separated list of SM Profile types to skip (default: 'AssetOEEV1,FlowComputer')
-- `BEDROCK_TIER_MODEL_ID` - Model ID for routine analysis (default: Claude 3.5 Haiku). Tier 2/3 use this cheaper model. Interactive Q&A still uses `BEDROCK_MODEL_ID` (Sonnet).
+- `BEDROCK_TIER_MODEL_ID` - Model ID for routine analysis (default: Sonnet, same as primary). Tier 2/3 use this model. Can be overridden to a cheaper model (e.g., Haiku) once subscribed in Bedrock Marketplace. Interactive Q&A uses `BEDROCK_MODEL_ID` (Sonnet).
 - `AGENT_DAILY_TOKEN_BUDGET` - Daily input token limit for AI analysis (default: 500000). Circuit breaker pauses analysis when exceeded.
 
 Note: AI uses **AWS Bedrock** (not Anthropic API directly). No ANTHROPIC_API_KEY needed.
