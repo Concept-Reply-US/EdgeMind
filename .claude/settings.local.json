@@ -5,6 +5,9 @@
       "Bash(npm test:*)",
       "WebSearch",
       "WebFetch(domain:aws.amazon.com)"
+      "Bash(git checkout:*)",
+      "Bash(git pull origin dev)",
+      "Bash(git merge feature/Trend_Analysis)"
     ]
   }
 }
