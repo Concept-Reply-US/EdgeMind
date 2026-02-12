@@ -1670,8 +1670,37 @@ app.get('/api/trends/oee-components', async (req, res) => {
 // ============================================================================
 
 /**
+ * GET /api/spc/sites - Discover sites with SPC-eligible data for an enterprise
+ * Query params: enterprise
+ */
+app.get('/api/spc/sites', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null || enterprise === 'ALL') {
+      return res.status(400).json({
+        error: 'Invalid enterprise parameter. Must specify a single enterprise.'
+      });
+    }
+
+    const sites = await spcModule.discoverSPCSites(enterprise);
+
+    res.json({
+      sites,
+      enterprise,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[API] SPC sites discovery error:', error);
+    res.status(500).json({
+      error: 'Failed to discover SPC sites',
+      message: error.message
+    });
+  }
+});
+
+/**
  * GET /api/spc/measurements - Discover top problematic measurements for SPC
- * Query params: enterprise, limit (default: 5)
+ * Query params: enterprise, limit (default: 5), site (optional)
  */
 app.get('/api/spc/measurements', async (req, res) => {
   try {
@@ -1683,11 +1712,13 @@ app.get('/api/spc/measurements', async (req, res) => {
     }
 
     const limit = parseInt(req.query.limit) || 5;
-    const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit);
+    const site = req.query.site || null;
+    const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit, site);
 
     res.json({
       measurements,
       enterprise,
+      site: site || 'ALL',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1720,7 +1751,8 @@ app.get('/api/spc/data', async (req, res) => {
     }
 
     const window = trendsModule.validateTimeWindow(req.query.window);
-    const result = await spcModule.querySPCData(measurement, window, enterprise);
+    const site = req.query.site || null;
+    const result = await spcModule.querySPCData(measurement, window, enterprise, site);
 
     res.json(result);
   } catch (error) {
