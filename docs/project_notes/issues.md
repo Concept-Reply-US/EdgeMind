@@ -174,4 +174,11 @@ Completed work and issue tracking. For quick reference - full details live in gi
 - **Files**: `lib/config.js`, `lib/ai/index.js`
 - **Branch**: dev
 
+### 2026-02-12 - Modal Scroll Fix + Anomaly Dedup Overhaul (PR #53)
+- **Status**: Completed
+- **Description**: Fixed 3 bugs: (1) maximized modals couldn't scroll (missing `overflow: visible` override), (2) blank anomalies in Edge Minder (field name mismatch `description` vs `text` between backend and frontend), (3) noisy anomaly list (23 entries, many duplicates). Overhauled dedup system: structured composite key, severity floor filter, tightened caps, anomaly categories, per-enterprise rate limit, frontend dedup.
+- **PR**: #53 (hotfix/modal-css → dev)
+- **Commits**: `dc63908` (modal scroll), `4f6af56` (anomaly dedup overhaul)
+- **Files**: `css/cards.css`, `js/insights.js`, `lib/ai/index.js`, `lib/state.js`, `lib/domain-context.js`
+
 <!-- Add new entries above this line -->
