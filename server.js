@@ -1672,7 +1672,8 @@ app.get('/api/trends/oee-components', async (req, res) => {
   try {
     const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
     const window = trendsModule.validateTimeWindow(req.query.window);
-    const component = req.query.component || 'all';
+    const VALID_OEE_COMPONENTS = ['availability', 'performance', 'quality', 'all'];
+    const component = VALID_OEE_COMPONENTS.includes(req.query.component) ? req.query.component : 'all';
 
     const result = await trendsModule.calculateOEEComponentTrend(enterprise, window, component);
     res.json(result);
@@ -1732,7 +1733,7 @@ app.get('/api/spc/measurements', async (req, res) => {
     }
 
     const limit = parseInt(req.query.limit) || 5;
-    const site = req.query.site || null;
+    const site = req.query.site ? validateSite(req.query.site) : null;
     const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit, site);
 
     res.json({
@@ -1756,7 +1757,7 @@ app.get('/api/spc/measurements', async (req, res) => {
  */
 app.get('/api/spc/data', async (req, res) => {
   try {
-    const measurement = req.query.measurement;
+    const measurement = sanitizeInfluxIdentifier(req.query.measurement || '');
     if (!measurement) {
       return res.status(400).json({
         error: 'Missing required parameter: measurement'
@@ -1771,7 +1772,7 @@ app.get('/api/spc/data', async (req, res) => {
     }
 
     const window = trendsModule.validateTimeWindow(req.query.window);
-    const site = req.query.site || null;
+    const site = req.query.site ? validateSite(req.query.site) : null;
     const result = await spcModule.querySPCData(measurement, window, enterprise, site);
 
     res.json(result);
