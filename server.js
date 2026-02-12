@@ -566,31 +566,6 @@ function handleClientRequest(ws, request) {
       }));
       break;
 
-    case 'ask_claude':
-      // SECURITY: Validate question parameter
-      if (!request.question || typeof request.question !== 'string') {
-        ws.send(JSON.stringify({ type: 'error', error: 'Missing or invalid question' }));
-        return;
-      }
-      if (request.question.length > MAX_INPUT_LENGTH) {
-        ws.send(JSON.stringify({ type: 'error', error: 'Question too long (max 1000 characters)' }));
-        return;
-      }
-
-      aiModule.askClaudeWithContext(request.question).then(answer => {
-        ws.send(JSON.stringify({
-          type: 'claude_response',
-          data: { question: request.question, answer }
-        }));
-      }).catch(error => {
-        console.error('Error processing Claude question:', error.message);
-        ws.send(JSON.stringify({
-          type: 'claude_response',
-          data: { question: request.question, answer: 'Sorry, I encountered an error processing your question. Please try again.' }
-        }));
-      });
-      break;
-
     case 'update_anomaly_filter':
       // SECURITY: Validate filters parameter
       if (!request.filters || !Array.isArray(request.filters)) {
