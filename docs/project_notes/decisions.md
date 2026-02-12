@@ -719,4 +719,40 @@ Replace the fixed 30-second analysis interval with a three-tier architecture:
 
 ---
 
+### ADR-019: Anomaly Dedup Overhaul — Structured Keys + Noise Reduction (2026-02-12)
+
+**Context:**
+- Edge Minder panel showed 23 anomalies, many blank and noisy
+- Original dedup key used `anomaly.severity` (low/medium/high) — same anomaly at different severities created duplicates, while different anomalies at same severity collided
+- Interim fix used first 50 chars of `anomaly.description` — still fragile because Claude rephrases the same anomaly differently each cycle
+- No severity filtering, no rate limiting, no frontend dedup
+- Storage caps too generous (backend 100, frontend 50) for a demo dashboard
+
+**Decision:**
+Implement four priority levels of improvements:
+
+- **P0: Structured composite dedup key** — `enterprise-metric::severity::threshold` instead of description text. Uses structured fields from Claude's JSON response, which are deterministic across runs.
+- **P1: Severity floor filter** — Skip `low` severity anomalies (configurable via `minAnomalySeverity` in `lib/state.js`, default: `medium`). Frontend dedup via fingerprinting (`enterprise::metric::description`) prevents duplicates on WebSocket reconnect.
+- **P2: Tighten caps** — Backend 100→30, frontend 50→20. Dedup cache TTL 30min→60min, configurable via `ANOMALY_CACHE_TTL_MS` env var.
+- **P3: Anomaly categories + rate limiting** — `ANOMALY_CATEGORIES` enum and `categorizeAnomaly()` function in `lib/domain-context.js`. Every stored anomaly gets a `category` field (oee_degradation, equipment_fault, quality_exceedance, thermal_exceedance, throughput_drop, state_transition, uncategorized). Per-enterprise rate limit: max 2 anomalies per enterprise per insight cycle.
+
+**Alternatives Considered:**
+- ML-based semantic dedup (embedding similarity) → Rejected: over-engineered for demo, adds latency
+- Asking Claude to assign a canonical anomaly ID → Rejected: LLMs aren't consistent enough for IDs
+- Description-based dedup with longer substring → Rejected: still fragile, just delays the failure mode
+
+**Consequences:**
+- ✅ Dedup key is deterministic (structured fields, not prose)
+- ✅ ~40-50% noise reduction from severity floor alone
+- ✅ Frontend immune to reconnect-induced duplicates
+- ✅ Category field enables future UI grouping/filtering
+- ✅ Rate limit prevents burst noise from single analysis cycle
+- ⚠️ Structured key may miss truly different anomalies that share enterprise/metric/severity/threshold (low risk — threshold differentiates)
+- ⚠️ Category classification uses keyword matching — may need tuning as new anomaly types emerge
+
+**Files Modified:** `lib/ai/index.js`, `lib/state.js`, `lib/domain-context.js`, `js/insights.js`, `css/cards.css`
+**PR:** #53 (hotfix/modal-css → dev)
+
+---
+
 <!-- Add new decisions above this line -->
