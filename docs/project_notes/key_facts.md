@@ -148,7 +148,7 @@ Enterprise B/concept-reply/Site1/area/machine/component/metric/type
 - **Tier 1 Delta Check**: 120,000ms (2 minutes) — env: `AGENT_CHECK_INTERVAL_MS`
 - **Tier 3 Summary Interval**: 900,000ms (15 minutes) — env: `AGENT_SUMMARY_INTERVAL_MS`
 - **Change Threshold**: 5% — env: `AGENT_CHANGE_THRESHOLD_PCT`
-- **Anomaly Cache TTL**: 30 minutes (dedup window for work orders)
+- **Anomaly Cache TTL**: 60 minutes — env: `ANOMALY_CACHE_TTL_MS` (default: 3600000)
 - **WebSocket Throttle**: Every 10th MQTT message
 - **Schema Cache TTL**: 5 minutes
 - **Trend Query Window**: 5 minutes (1-min aggregates)
@@ -168,7 +168,7 @@ The agent loop uses a three-tier architecture to minimize cost while maximizing 
 
 **Tier 3** cycles enterprise focus: Enterprise A → Enterprise B → Enterprise C → Cross-enterprise comparison.
 
-**Anomaly Dedup**: `Map<string, {timestamp, count}>` with 30-min TTL prevents duplicate work orders.
+**Anomaly Dedup**: `Map<string, {timestamp, count}>` with 60-min TTL (configurable: `ANOMALY_CACHE_TTL_MS`). Key format: `enterprise-metric::severity::threshold`. Severity floor: `medium` (configurable: `minAnomalySeverity` in state.js). Per-enterprise rate limit: max 2 anomalies per insight cycle. Frontend dedup via fingerprinting on reconnect. Backend cap: 30, frontend cap: 20.
 
 **Expected Cost**: ~6 Bedrock calls/hour during stable operation (vs 120 previously).
 
