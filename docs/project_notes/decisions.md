@@ -685,4 +685,38 @@ Replace the fixed 30-second analysis interval with a three-tier architecture:
 
 ---
 
+### ADR-018: Bedrock Cost Optimization — Single-Shot + Nova Lite (2026-02-12)
+
+**Context:**
+- Tier 2/3 analysis used Claude Sonnet ($3/$15 per M tokens) for routine OEE summaries
+- Tool call loops caused 4-10 Bedrock invocations per analysis (token accumulation)
+- Haiku 4.5 and Claude 3.5 Haiku both failed with AWS Marketplace subscription errors
+- Need an accessible, cheap model for routine analysis without new Marketplace subscriptions
+
+**Decision:**
+- **Phase 1 (PR #51):** Pre-fetch all tool data before AI call, eliminating tool call loops (1 Bedrock call instead of 4-10). Increased Tier 3 interval from 15min to 30min. Added daily token budget circuit breaker.
+- **Phase 2 (DRR-002):** Switch tier model to Amazon Nova Lite (`us.amazon.nova-lite-v1:0`) — an Amazon-native model that requires no Marketplace subscription. 61x cheaper per call ($0.00007 vs $0.0044).
+- Code changes: `temperature: 0` in Nova inferenceConfig, token tracking handles both snake_case (Claude) and camelCase (Nova) field names.
+- Interactive Q&A stays on Claude Sonnet.
+
+**Alternatives Considered:**
+- Haiku 4.5 → Rejected: Marketplace subscription required (not subscribed, policy: don't subscribe)
+- Claude 3.5 Haiku → Rejected: Also requires Marketplace subscription
+- Converse API migration → Rejected: Unnecessary scope, existing Nova adapters already work
+- Nova Micro → Rejected: Higher quality risk without testing; Nova Lite already 61x cheaper
+
+**Consequences:**
+- ✅ 61x cost reduction per tier analysis call (~$0.10/month vs ~$6.60 with Sonnet)
+- ✅ No Marketplace subscription needed (Amazon-native model)
+- ✅ ~8 lines of code change total
+- ✅ Trivially reversible via `BEDROCK_TIER_MODEL_ID` env var
+- ⚠️ Analysis quality may be slightly less nuanced than Sonnet (acceptable for routine analysis)
+- ⚠️ N=1 test sample — production is the real test
+
+**FPF Reference:** `.fpf/decisions/DRR-002-nova-lite-tier-model.md`
+
+**Revisit:** If Nova Lite JSON quality proves insufficient (>20% parse failures), or if Haiku becomes subscribed in the AWS account.
+
+---
+
 <!-- Add new decisions above this line -->

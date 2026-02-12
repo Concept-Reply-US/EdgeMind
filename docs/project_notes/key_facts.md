@@ -251,8 +251,8 @@ const cleanPath = path.startsWith('/') ? path.slice(1) : path;
 
 - **Framework**: Jest
 - **Run**: `npm test`
-- **Test Suites**: 6 (validation, influx writer, OEE calculation x2, CMMS MaintainX, change detection)
-- **Total Tests**: 190
+- **Test Suites**: 11 (validation, influx writer, OEE calculation x2, CMMS MaintainX, change detection, CESMII validator, CESMII handler, CESMII publisher, trends, SPC)
+- **Total Tests**: 407
 
 ---
 
@@ -288,8 +288,11 @@ const cleanPath = path.startsWith('/') ? path.slice(1) : path;
 - **Uses AWS Bedrock** - NOT direct Anthropic API
 - **No ANTHROPIC_API_KEY needed** - Uses IAM role permissions
 - Backend uses `@aws-sdk/client-bedrock-runtime` which authenticates via IAM
-- Task role needs `bedrock:InvokeModel` permission on `anthropic.claude-*` models
-- Model ID configured in `lib/config.js` (e.g., `anthropic.claude-3-5-sonnet-20241022-v2:0`)
+- Task role needs `bedrock:InvokeModel` permission on `anthropic.claude-*` AND `amazon.nova-*` models
+- **Primary model** (interactive Q&A): Claude Sonnet (`us.anthropic.claude-sonnet-4-20250514-v1:0`)
+- **Tier model** (routine Tier 2/3 analysis): Amazon Nova Lite (`us.amazon.nova-lite-v1:0`) — 61x cheaper, no Marketplace subscription needed
+- Tier model configurable via `BEDROCK_TIER_MODEL_ID` env var
+- Nova uses camelCase token fields (`inputTokens`/`outputTokens`), Claude uses snake_case (`input_tokens`/`output_tokens`) — code handles both
 
 ⚠️ **Bedrock IAM Pattern (Cross-Region)**: Inference profiles route to models in different regions. The IAM policy must use wildcard region (`arn:aws:bedrock:*::foundation-model/...`) to allow cross-region inference. See `backend_stack.py` for the full pattern.
 
