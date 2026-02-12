@@ -8,10 +8,20 @@ let oeeChart = null;
 let wasteChart = null;
 let equipmentChart = null;
 
-// NEW: Predictive charts
+// Predictive charts
 let downtimeParetoChart = null;
 let wastePredictiveChart = null;
 let oeeComponentsChart = null;
+
+// Map of canvas IDs to their parent container
+const CHART_CONTAINERS = {
+    'coo-oee-chart': null,
+    'coo-waste-chart': null,
+    'coo-equipment-chart': null,
+    'coo-downtime-pareto-chart': null,
+    'coo-waste-predictive-chart': null,
+    'coo-oee-components-chart': null
+};
 
 const CHART_COLORS = {
     cyan: '#00ffff',
@@ -40,17 +50,66 @@ function destroyChart(chart) {
 }
 
 /**
+ * Set loading state on a chart container
+ */
+function setLoading(canvasId, loading) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const container = canvas.closest('.trend-chart-container');
+    if (!container) return;
+    container.classList.toggle('chart-loading', loading);
+    // Remove any existing empty-state when starting to load
+    if (loading) {
+        const empty = container.querySelector('.chart-empty-state');
+        if (empty) empty.remove();
+    }
+}
+
+/**
+ * Show an empty state message on a chart container
+ */
+function showEmptyState(canvasId, message = 'No data available for this time window') {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const container = canvas.closest('.trend-chart-container');
+    if (!container) return;
+    // Remove existing empty state
+    const existing = container.querySelector('.chart-empty-state');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.className = 'chart-empty-state';
+    el.textContent = message;
+    container.appendChild(el);
+}
+
+/**
+ * Set all chart containers to loading state
+ */
+function setAllLoading(loading) {
+    for (const id of Object.keys(CHART_CONTAINERS)) {
+        setLoading(id, loading);
+    }
+}
+
+/**
  * Create OEE by Enterprise bar chart
  */
 function createOEEChart(data) {
     oeeChart = destroyChart(oeeChart);
+    const canvasId = 'coo-oee-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-oee-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
 
     const oeeData = data?.data || {};
     const enterprises = Object.keys(oeeData);
+    if (enterprises.length === 0) {
+        showEmptyState(canvasId);
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
     const values = enterprises.map(e => oeeData[e]?.oee || 0);
     const colors = values.map(v => {
         if (v >= 85) return CHART_COLORS.green;
@@ -107,13 +166,20 @@ function createOEEChart(data) {
  */
 function createWasteChart(data) {
     wasteChart = destroyChart(wasteChart);
+    const canvasId = 'coo-waste-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-waste-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
 
     const summary = data?.summary || {};
     const enterprises = Object.keys(summary);
+    if (enterprises.length === 0) {
+        showEmptyState(canvasId);
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
     const totals = enterprises.map(e => summary[e]?.total || 0);
     const trends = enterprises.map(e => summary[e]?.trend || 'stable');
 
@@ -173,8 +239,10 @@ function createWasteChart(data) {
  */
 function createEquipmentChart(data) {
     equipmentChart = destroyChart(equipmentChart);
+    const canvasId = 'coo-equipment-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-equipment-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
@@ -243,16 +311,24 @@ function createEquipmentChart(data) {
 }
 
 /**
- * NEW: Create downtime Pareto horizontal bar chart
+ * Create downtime Pareto horizontal bar chart
  */
 function createDowntimeParetoChart(data) {
     downtimeParetoChart = destroyChart(downtimeParetoChart);
+    const canvasId = 'coo-downtime-pareto-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-downtime-pareto-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
 
-    const topN = data.paretoData.slice(0, 10);
+    const paretoData = data?.paretoData || [];
+    if (paretoData.length === 0) {
+        showEmptyState(canvasId, 'No downtime events recorded for this time window');
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    const topN = paretoData.slice(0, 10);
     const labels = topN.map(d => `${d.machine} (${d.site})`);
     const values = topN.map(d => d.downtimeMinutes);
     const percentages = topN.map(d => d.percentOfTotal);
@@ -315,22 +391,41 @@ function createDowntimeParetoChart(data) {
 }
 
 /**
- * NEW: Create waste predictive line chart with forecast
+ * Check if predictive data has any actual data points
+ */
+function hasTimeSeriesData(byEnterprise) {
+    return Object.values(byEnterprise).some(ent =>
+        ent.historical && ent.historical.length > 0
+    );
+}
+
+/**
+ * Create waste predictive line chart with forecast
  */
 function createWastePredictiveChart(data) {
     wastePredictiveChart = destroyChart(wastePredictiveChart);
+    const canvasId = 'coo-waste-predictive-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-waste-predictive-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
 
-    const datasets = Object.entries(data.byEnterprise).flatMap(([enterprise, entData], idx) => {
+    const byEnterprise = data?.byEnterprise || {};
+    if (!hasTimeSeriesData(byEnterprise)) {
+        showEmptyState(canvasId, 'No waste data available for predictions');
+        const alertContainer = document.getElementById('waste-prediction-alerts');
+        if (alertContainer) alertContainer.innerHTML = '';
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    const datasets = Object.entries(byEnterprise).flatMap(([enterprise, entData], idx) => {
         const colors = [CHART_COLORS.cyan, CHART_COLORS.green, CHART_COLORS.amber];
-        const historicalData = entData.historical.map(d => ({
+        const historicalData = (entData.historical || []).map(d => ({
             x: new Date(d.timestamp),
             y: d.value
         }));
-        const predictionData = entData.prediction.map(d => ({
+        const predictionData = (entData.prediction || []).map(d => ({
             x: new Date(d.timestamp),
             y: d.value
         }));
@@ -339,7 +434,7 @@ function createWastePredictiveChart(data) {
             {
                 label: `${enterprise.replace('Enterprise ', 'Ent. ')} - Historical`,
                 data: historicalData,
-                borderColor: colors[idx],
+                borderColor: colors[idx % colors.length],
                 borderWidth: 2,
                 pointRadius: 2,
                 fill: false,
@@ -348,7 +443,7 @@ function createWastePredictiveChart(data) {
             {
                 label: `${enterprise.replace('Enterprise ', 'Ent. ')} - Predicted`,
                 data: predictionData,
-                borderColor: colors[idx],
+                borderColor: colors[idx % colors.length],
                 borderWidth: 2,
                 borderDash: [8, 4],
                 pointRadius: 4,
@@ -399,20 +494,28 @@ function createWastePredictiveChart(data) {
     });
 
     // Render alert banner
-    renderAlertBanner(data.byEnterprise);
+    renderAlertBanner(byEnterprise);
 }
 
 /**
- * NEW: Create OEE components predictive chart (multi-line)
+ * Create OEE components predictive chart (multi-line)
  */
 function createOEEComponentsChart(data) {
     oeeComponentsChart = destroyChart(oeeComponentsChart);
+    const canvasId = 'coo-oee-components-chart';
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('coo-oee-components-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
 
     const components = ['availability', 'performance', 'quality'];
+    const hasData = components.some(c => data?.[c]?.historical?.length > 0);
+    if (!hasData) {
+        showEmptyState(canvasId, 'No OEE component data available for predictions');
+        return;
+    }
+
+    const ctx = canvas.getContext('2d');
     const colors = {
         availability: CHART_COLORS.green,
         performance: CHART_COLORS.blue,
@@ -421,13 +524,13 @@ function createOEEComponentsChart(data) {
 
     const datasets = components.flatMap(component => {
         const compData = data[component];
-        if (!compData || !compData.historical) return [];
+        if (!compData || !compData.historical || compData.historical.length === 0) return [];
 
         const historical = compData.historical.map(d => ({
             x: new Date(d.timestamp),
             y: d.value
         }));
-        const prediction = compData.prediction.map(d => ({
+        const prediction = (compData.prediction || []).map(d => ({
             x: new Date(d.timestamp),
             y: d.value
         }));
@@ -477,7 +580,8 @@ function createOEEComponentsChart(data) {
                     type: 'time',
                     time: {
                         unit: selectedTimeWindow === 'hourly' ? 'minute' :
-                              selectedTimeWindow === 'shift' ? 'hour' : 'hour'
+                              selectedTimeWindow === 'shift' ? 'hour' :
+                              selectedTimeWindow === 'daily' ? 'hour' : 'day'
                     },
                     grid: { color: DARK_THEME.gridColor },
                     ticks: { color: DARK_THEME.tickColor }
@@ -497,7 +601,7 @@ function createOEEComponentsChart(data) {
 }
 
 /**
- * NEW: Render alert banner for predictions exceeding thresholds
+ * Render alert banner for predictions exceeding thresholds
  */
 function renderAlertBanner(enterpriseData) {
     const alertContainer = document.getElementById('waste-prediction-alerts');
@@ -511,7 +615,7 @@ function renderAlertBanner(enterpriseData) {
         }));
 
     if (alerts.length === 0) {
-        alertContainer.innerHTML = '<div class="prediction-status-good">✓ All waste predictions within normal range</div>';
+        alertContainer.innerHTML = '<div class="prediction-status-good">All waste predictions within normal range</div>';
         return;
     }
 
@@ -528,18 +632,18 @@ function renderAlertBanner(enterpriseData) {
 }
 
 /**
- * NEW: Handle time window selection
+ * Handle time window selection
  */
-window.selectTimeWindow = function(window) {
-    selectedTimeWindow = window;
+window.selectTimeWindow = function(win) {
+    selectedTimeWindow = win;
 
     // Update UI
     document.querySelectorAll('.window-btn').forEach(btn => {
         const btnText = btn.textContent.toLowerCase();
-        const isActive = (window === 'hourly' && btnText.includes('hourly')) ||
-                         (window === 'shift' && btnText.includes('shift')) ||
-                         (window === 'daily' && btnText.includes('daily')) ||
-                         (window === 'weekly' && btnText.includes('weekly'));
+        const isActive = (win === 'hourly' && btnText.includes('hourly')) ||
+                         (win === 'shift' && btnText.includes('shift')) ||
+                         (win === 'daily' && btnText.includes('daily')) ||
+                         (win === 'weekly' && btnText.includes('weekly'));
         btn.classList.toggle('active', isActive);
     });
 
@@ -565,6 +669,9 @@ async function safeFetch(url, label) {
  * Fetch all data and create/update charts
  */
 async function fetchAndRender() {
+    // Show loading state on all charts
+    setAllLoading(true);
+
     // Fetch all data in parallel - each request is independent
     const [oeeData, wasteData, equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
         safeFetch('/api/oee/breakdown', 'OEE breakdown'),
@@ -576,12 +683,24 @@ async function fetchAndRender() {
     ]);
 
     // Create each chart independently - failures don't block others
+    // Each create function clears its own loading state
     if (oeeData) createOEEChart(oeeData);
+    else { setLoading('coo-oee-chart', false); showEmptyState('coo-oee-chart'); }
+
     if (wasteData) createWasteChart(wasteData);
+    else { setLoading('coo-waste-chart', false); showEmptyState('coo-waste-chart'); }
+
     if (equipData) createEquipmentChart(equipData);
+    else { setLoading('coo-equipment-chart', false); showEmptyState('coo-equipment-chart'); }
+
     if (downtimeData) createDowntimeParetoChart(downtimeData);
+    else { setLoading('coo-downtime-pareto-chart', false); showEmptyState('coo-downtime-pareto-chart', 'No downtime events recorded for this time window'); }
+
     if (wastePredData) createWastePredictiveChart(wastePredData);
+    else { setLoading('coo-waste-predictive-chart', false); showEmptyState('coo-waste-predictive-chart', 'No waste data available for predictions'); }
+
     if (oeePredData) createOEEComponentsChart(oeePredData);
+    else { setLoading('coo-oee-components-chart', false); showEmptyState('coo-oee-components-chart', 'No OEE component data available for predictions'); }
 }
 
 /**
@@ -605,7 +724,7 @@ export function cleanup() {
     wasteChart = destroyChart(wasteChart);
     equipmentChart = destroyChart(equipmentChart);
 
-    // Destroy new predictive charts
+    // Destroy predictive charts
     downtimeParetoChart = destroyChart(downtimeParetoChart);
     wastePredictiveChart = destroyChart(wastePredictiveChart);
     oeeComponentsChart = destroyChart(oeeComponentsChart);
