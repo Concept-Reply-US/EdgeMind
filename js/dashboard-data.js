@@ -17,6 +17,9 @@ import { filterInsights } from './insights.js';
 export async function fetchActiveSensorCount() {
     try {
         const response = await fetch('/api/schema/measurements');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.measurements && Array.isArray(data.measurements)) {
@@ -42,12 +45,15 @@ export async function fetchOEE(signal) {
     try {
         const enterprise = getEnterpriseParam(state);
         const response = await fetch(`/api/oee?enterprise=${encodeURIComponent(enterprise)}`, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         const oeeScore = document.getElementById('oee-score');
         const oeeStatus = document.getElementById('oee-status');
 
-        if (data.average !== null) {
+        if (data.average != null) {
             oeeScore.textContent = data.average.toFixed(1) + '%';
             const displayName = enterprise === 'ALL' ? 'All Enterprises' : enterprise;
             oeeStatus.textContent = `${data.period} avg • ${displayName}`;
@@ -82,6 +88,9 @@ export async function fetchOEEBreakdown(signal) {
         }
 
         const response = await fetch('/api/oee/breakdown', { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (window.oeeBreakdownChart && data.data) {
@@ -110,6 +119,9 @@ export async function fetchWasteTrends(signal) {
             ? `/api/waste/trends?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/trends';
         const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (window.wasteTrendChart && data.linesSummary) {
@@ -163,6 +175,9 @@ export async function fetchScrapByLine(signal) {
             ? `/api/waste/by-line?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/by-line';
         const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (window.scrapByLineChart && data.lines) {
@@ -190,10 +205,13 @@ export async function fetchQualityMetrics(signal) {
             ? `/api/waste/trends?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/waste/trends';
         const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         const grid = document.getElementById('quality-grid');
-        if (!grid || !data.summary) return;
+        if (!grid || data.summary == null) return;
 
         const enterpriseNames = {
             'Enterprise A': { short: 'ENT A', industry: 'Glass Mfg' },
@@ -286,6 +304,9 @@ export async function fetchFactoryStatus(signal) {
             : '/api/factory/status';
 
         const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.enterprises) {
@@ -311,6 +332,9 @@ export async function fetchEquipmentStates(signal) {
             ? `/api/equipment/states?enterprise=${encodeURIComponent(enterprise)}`
             : '/api/equipment/states';
         const response = await fetch(url, { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.states && Array.isArray(data.states)) {
@@ -381,6 +405,9 @@ export async function fetchLineOEE(signal) {
 
     try {
         const response = await fetch('/api/oee/lines', { signal });
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.lines && Array.isArray(data.lines)) {

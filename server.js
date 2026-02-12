@@ -744,7 +744,8 @@ app.get('/api/oee', async (req, res) => {
     res.json(oeeData);
   } catch (error) {
     console.error('OEE query error:', error);
-    res.status(500).json({ error: 'Failed to query OEE data' });
+    // Return valid response shape with null values instead of 500 error
+    res.json({ average: null, period: '24h', enterprise: req.query.enterprise || 'ALL', dataPoints: 0 });
   }
 });
 
@@ -953,10 +954,8 @@ app.get('/api/schema/measurements', async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error('Schema measurements query error:', error);
-    res.status(500).json({
-      error: 'Failed to query schema measurements',
-      message: error.message
-    });
+    // Return valid empty response instead of 500 error
+    res.json({ measurements: [], summary: { totalMeasurements: 0, dataPoints24h: 0 }, cached: false, cacheAge: 0 });
   }
 });
 
