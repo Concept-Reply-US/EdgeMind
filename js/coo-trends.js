@@ -6,7 +6,6 @@ let selectedTimeWindow = 'shift'; // Default: shift (8h)
 // Existing charts
 let oeeChart = null;
 let wasteChart = null;
-let equipmentChart = null;
 
 // Predictive charts
 let downtimeParetoChart = null;
@@ -17,7 +16,6 @@ let oeeComponentsChart = null;
 const CHART_CONTAINERS = {
     'coo-oee-chart': null,
     'coo-waste-chart': null,
-    'coo-equipment-chart': null,
     'coo-downtime-pareto-chart': null,
     'coo-waste-predictive-chart': null,
     'coo-oee-components-chart': null
@@ -92,9 +90,9 @@ function setAllLoading(loading) {
 }
 
 /**
- * Create OEE by Enterprise bar chart
+ * Create OEE by Enterprise bar chart with equipment state distribution
  */
-function createOEEChart(data) {
+function createOEEChart(data, equipData) {
     oeeChart = destroyChart(oeeChart);
     const canvasId = 'coo-oee-chart';
     setLoading(canvasId, false);
@@ -110,35 +108,114 @@ function createOEEChart(data) {
     }
 
     const ctx = canvas.getContext('2d');
-    const values = enterprises.map(e => oeeData[e]?.oee || 0);
-    const colors = values.map(v => {
+    const oeeValues = enterprises.map(e => oeeData[e]?.oee || 0);
+    const oeeColors = oeeValues.map(v => {
         if (v >= 85) return CHART_COLORS.green;
         if (v >= 70) return CHART_COLORS.amber;
         return CHART_COLORS.red;
     });
 
+    // Build state distribution per enterprise from equipment states
+    const statesByEnterprise = {};
+    const states = equipData?.states || [];
+    for (const s of states) {
+        const ent = s.enterprise;
+        if (!statesByEnterprise[ent]) statesByEnterprise[ent] = { running: 0, idle: 0, down: 0, total: 0 };
+        const name = (s.stateName || '').toLowerCase();
+        if (name === 'running') statesByEnterprise[ent].running++;
+        else if (name === 'idle') statesByEnterprise[ent].idle++;
+        else if (name === 'down') statesByEnterprise[ent].down++;
+        statesByEnterprise[ent].total++;
+    }
+
+    const runningPct = enterprises.map(e => {
+        const s = statesByEnterprise[e];
+        return s && s.total > 0 ? (s.running / s.total) * 100 : 0;
+    });
+    const idlePct = enterprises.map(e => {
+        const s = statesByEnterprise[e];
+        return s && s.total > 0 ? (s.idle / s.total) * 100 : 0;
+    });
+    const downPct = enterprises.map(e => {
+        const s = statesByEnterprise[e];
+        return s && s.total > 0 ? (s.down / s.total) * 100 : 0;
+    });
+
+    const hasStateData = states.length > 0;
+    const labels = enterprises.map(e => e.replace('Enterprise ', 'Ent. '));
+
+    const datasets = [
+        {
+            label: 'OEE %',
+            data: oeeValues,
+            backgroundColor: oeeColors.map(c => c + '99'),
+            borderColor: oeeColors,
+            borderWidth: 2,
+            borderRadius: 6,
+            barPercentage: 0.5,
+            yAxisID: 'y',
+            order: 1
+        }
+    ];
+
+    if (hasStateData) {
+        datasets.push(
+            {
+                label: 'Running %',
+                data: runningPct,
+                backgroundColor: CHART_COLORS.green + '55',
+                borderColor: CHART_COLORS.green,
+                borderWidth: 1,
+                barPercentage: 0.8,
+                yAxisID: 'y1',
+                stack: 'states',
+                order: 2
+            },
+            {
+                label: 'Idle %',
+                data: idlePct,
+                backgroundColor: CHART_COLORS.amber + '55',
+                borderColor: CHART_COLORS.amber,
+                borderWidth: 1,
+                barPercentage: 0.8,
+                yAxisID: 'y1',
+                stack: 'states',
+                order: 2
+            },
+            {
+                label: 'Down %',
+                data: downPct,
+                backgroundColor: CHART_COLORS.red + '55',
+                borderColor: CHART_COLORS.red,
+                borderWidth: 1,
+                barPercentage: 0.8,
+                yAxisID: 'y1',
+                stack: 'states',
+                order: 2
+            }
+        );
+    }
+
     oeeChart = new Chart(ctx, {
         type: 'bar',
-        data: {
-            labels: enterprises.map(e => e.replace('Enterprise ', 'Ent. ')),
-            datasets: [{
-                label: 'OEE %',
-                data: values,
-                backgroundColor: colors.map(c => c + '99'),
-                borderColor: colors,
-                borderWidth: 2,
-                borderRadius: 6,
-                barPercentage: 0.6
-            }]
-        },
+        data: { labels, datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { display: false },
+                legend: {
+                    display: hasStateData,
+                    position: 'bottom',
+                    labels: {
+                        color: DARK_THEME.tickColor,
+                        padding: 8,
+                        font: { size: 10 },
+                        usePointStyle: true
+                    }
+                },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => `OEE: ${ctx.parsed.y.toFixed(1)}%`
+                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`
                     }
                 }
             },
@@ -146,15 +223,31 @@ function createOEEChart(data) {
                 y: {
                     beginAtZero: true,
                     max: 100,
+                    position: 'left',
+                    title: { display: true, text: 'OEE %', color: DARK_THEME.tickColor, font: { size: 10 } },
                     grid: { color: DARK_THEME.gridColor },
                     ticks: {
                         color: DARK_THEME.tickColor,
                         callback: (v) => v + '%'
                     }
                 },
+                y1: {
+                    beginAtZero: true,
+                    max: 100,
+                    position: 'right',
+                    display: hasStateData,
+                    title: { display: hasStateData, text: 'State %', color: DARK_THEME.tickColor, font: { size: 10 } },
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: DARK_THEME.tickColor,
+                        callback: (v) => v + '%'
+                    },
+                    stacked: true
+                },
                 x: {
                     grid: { display: false },
-                    ticks: { color: DARK_THEME.tickColor }
+                    ticks: { color: DARK_THEME.tickColor },
+                    stacked: false
                 }
             }
         }
@@ -228,82 +321,6 @@ function createWasteChart(data) {
                 x: {
                     grid: { display: false },
                     ticks: { color: DARK_THEME.tickColor }
-                }
-            }
-        }
-    });
-}
-
-/**
- * Create Equipment state doughnut chart
- */
-function createEquipmentChart(data) {
-    equipmentChart = destroyChart(equipmentChart);
-    const canvasId = 'coo-equipment-chart';
-    setLoading(canvasId, false);
-
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    const summary = data?.summary || { running: 0, idle: 0, down: 0, unknown: 0 };
-    const labels = ['Running', 'Idle', 'Down', 'Unknown'];
-    const values = [summary.running || 0, summary.idle || 0, summary.down || 0, summary.unknown || 0];
-    const colors = [CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.red, '#666666'];
-
-    // Filter out zero values for cleaner display
-    const filteredLabels = [];
-    const filteredValues = [];
-    const filteredColors = [];
-    labels.forEach((label, i) => {
-        if (values[i] > 0) {
-            filteredLabels.push(label);
-            filteredValues.push(values[i]);
-            filteredColors.push(colors[i]);
-        }
-    });
-
-    // If all zero, show placeholder
-    if (filteredValues.length === 0) {
-        filteredLabels.push('No Data');
-        filteredValues.push(1);
-        filteredColors.push('#333333');
-    }
-
-    equipmentChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: filteredLabels,
-            datasets: [{
-                data: filteredValues,
-                backgroundColor: filteredColors.map(c => c + 'cc'),
-                borderColor: filteredColors,
-                borderWidth: 2,
-                hoverOffset: 8
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            cutout: '55%',
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        color: DARK_THEME.tickColor,
-                        padding: 16,
-                        usePointStyle: true,
-                        pointStyleWidth: 12
-                    }
-                },
-                tooltip: {
-                    callbacks: {
-                        label: (ctx) => {
-                            const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
-                            const pct = total > 0 ? ((ctx.parsed / total) * 100).toFixed(1) : 0;
-                            return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
-                        }
-                    }
                 }
             }
         }
@@ -684,14 +701,11 @@ async function fetchAndRender() {
 
     // Create each chart independently - failures don't block others
     // Each create function clears its own loading state
-    if (oeeData) createOEEChart(oeeData);
+    if (oeeData) createOEEChart(oeeData, equipData);
     else { setLoading('coo-oee-chart', false); showEmptyState('coo-oee-chart'); }
 
     if (wasteData) createWasteChart(wasteData);
     else { setLoading('coo-waste-chart', false); showEmptyState('coo-waste-chart'); }
-
-    if (equipData) createEquipmentChart(equipData);
-    else { setLoading('coo-equipment-chart', false); showEmptyState('coo-equipment-chart'); }
 
     if (downtimeData) createDowntimeParetoChart(downtimeData);
     else { setLoading('coo-downtime-pareto-chart', false); showEmptyState('coo-downtime-pareto-chart', 'No downtime events recorded for this time window'); }
@@ -722,7 +736,6 @@ export function cleanup() {
     // Destroy existing charts
     oeeChart = destroyChart(oeeChart);
     wasteChart = destroyChart(wasteChart);
-    equipmentChart = destroyChart(equipmentChart);
 
     // Destroy predictive charts
     downtimeParetoChart = destroyChart(downtimeParetoChart);
