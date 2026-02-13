@@ -29,10 +29,35 @@ export function createInsightElement(insight) {
     const escapedConfidence = escapeHtml(String(insight.confidence || 'N/A'));
     const escapedSeverity = escapeHtml(String(insight.severity));
 
+    // Extract model name and tier for badge
+    let modelTierBadge = '';
+    if (insight.model || insight.analysisTier) {
+        let modelName = 'Claude'; // default fallback
+        if (insight.model) {
+            const model = insight.model.toLowerCase();
+            if (model.includes('nova-lite')) {
+                modelName = 'Nova Lite';
+            } else if (model.includes('nova-micro')) {
+                modelName = 'Nova Micro';
+            } else if (model.includes('nova')) {
+                modelName = 'Nova';
+            } else if (model.includes('sonnet')) {
+                modelName = 'Sonnet';
+            } else if (model.includes('haiku')) {
+                modelName = 'Haiku';
+            } else if (model.includes('opus')) {
+                modelName = 'Opus';
+            }
+        }
+        const escapedModelName = escapeHtml(modelName);
+        const tierText = insight.analysisTier ? ` · Tier ${escapeHtml(String(insight.analysisTier))}` : '';
+        modelTierBadge = `<span style="color: var(--accent-cyan, #00d4ff); opacity: 0.8">${escapedModelName}${tierText}</span> · `;
+    }
+
     insightEl.innerHTML = `
         <div class="insight-text">${escapedInsightText}</div>
         <div class="insight-meta">
-            ${anomalyInfo}Confidence: ${escapedConfidence} •
+            ${modelTierBadge}${anomalyInfo}Confidence: ${escapedConfidence} •
             Priority: ${escapedSeverity} •
             Analyzed ${dataInfo} •
             ${insight.timestamp ? new Date(insight.timestamp).toLocaleTimeString() : ''}
@@ -50,12 +75,24 @@ export function addClaudeInsight(insight) {
     if (insight.anomalies && Array.isArray(insight.anomalies)) {
         insight.anomalies.forEach(anomalyData => {
             if (typeof anomalyData === 'string') {
+                // Dedup: skip if same anomaly already in list
+                const isDupe = state.anomalies.some(a => a.text === anomalyData);
+                if (isDupe) return;
+
                 state.anomalies.push({
                     text: anomalyData,
                     timestamp: insight.timestamp,
                     severity: insight.severity
                 });
             } else if (typeof anomalyData === 'object') {
+                // Dedup: skip if same anomaly already in list
+                const fingerprint = `${anomalyData.enterprise || ''}::${anomalyData.metric || ''}::${(anomalyData.description || '').substring(0, 50)}`;
+                const isDupe = state.anomalies.some(a => {
+                    const existing = `${a.enterprise || ''}::${a.metric || ''}::${(a.description || a.text || '').substring(0, 50)}`;
+                    return existing === fingerprint;
+                });
+                if (isDupe) return;
+
                 state.anomalies.push({
                     text: anomalyData.description || 'Anomaly detected',
                     description: anomalyData.description,
@@ -69,7 +106,7 @@ export function addClaudeInsight(insight) {
                 });
             }
         });
-        while (state.anomalies.length > 50) {
+        while (state.anomalies.length > 20) {
             state.anomalies.shift();
         }
         const tabCount = document.getElementById('anomaly-tab-count');
@@ -121,7 +158,7 @@ export function applyInsightFilter(filterType, containerEl, tabSelector, onAnoma
             filteredAnomalies.forEach(anomaly => {
                 const el = document.createElement('div');
                 el.className = 'anomaly-item';
-                const escapedText = escapeHtml(anomaly.text);
+                const escapedText = escapeHtml(anomaly.text || anomaly.description || 'Anomaly detected');
                 el.innerHTML = `
                     <div>${escapedText}</div>
                     <div class="anomaly-time">${anomaly.timestamp ? new Date(anomaly.timestamp).toLocaleTimeString() : ''}</div>

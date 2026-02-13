@@ -27,6 +27,7 @@
     <link rel="stylesheet" href="css/demo.css">
     <link rel="stylesheet" href="css/coo-views.css">
     <link rel="stylesheet" href="css/plant-views.css">
+    <link rel="stylesheet" href="css/cesmii.css">
     <link rel="stylesheet" href="css/footer.css">
     <link rel="stylesheet" href="css/responsive.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -104,6 +105,7 @@
             <button class="sub-nav__item" data-view="plant-equipment">Equipment Health</button>
             <button class="sub-nav__item" data-view="plant-alerts">Alerts & Work Orders</button>
             <button class="sub-nav__item" data-view="plant-process-trends">Process Trends</button>
+            <button class="sub-nav__item" data-view="plant-cesmii">CESMII</button>
         </div>
 
         <!-- Demo Control Panel -->
@@ -584,6 +586,33 @@
                 <div class="chart-card chart-card-full">
                     <h3 class="chart-card-title">Energy Consumption by Line</h3>
                     <canvas id="plant-energy-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Plant Manager: CESMII Work Orders View -->
+        <div class="persona-view" data-view="plant-cesmii">
+            <div class="view-header">
+                <h2 class="view-title">CESMII SM Profiles</h2>
+                <div class="cesmii-stats-bar" id="cesmii-stats"></div>
+            </div>
+            <div class="cesmii-grid">
+                <div class="card" id="cesmii-work-orders-card">
+                    <div class="card-title">
+                        Work Orders
+                        <button class="expand-btn" data-card-id="cesmii-work-orders-card">&#x26F6;</button>
+                    </div>
+                    <div id="cesmii-wo-inner" class="cesmii-scroll">
+                        <div id="cesmii-work-orders-list">
+                            <div class="view-loading">Loading CESMII work orders...</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-title">SM Profiles</div>
+                    <div id="cesmii-profiles-list">
+                        <div class="view-loading">Loading profiles...</div>
+                    </div>
                 </div>
             </div>
         </div>
