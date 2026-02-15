@@ -2,6 +2,7 @@
 // SPC measurements, downtime Pareto, production volume, energy consumption
 
 import { state } from './state.js';
+import { getEnterpriseParam } from './utils.js';
 
 let refreshInterval = null;
 let spcChart = null;
@@ -24,6 +25,48 @@ const DARK_THEME = {
     tickColor: '#e8e8e8',
     backgroundColor: 'transparent'
 };
+
+const CHART_IDS = ['plant-spc-chart', 'plant-downtime-chart', 'plant-production-chart', 'plant-energy-chart'];
+
+/**
+ * Toggle loading spinner on a chart card
+ */
+function setLoading(canvasId, loading) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const card = canvas.closest('.chart-card');
+    if (!card) return;
+    card.classList.toggle('chart-loading', loading);
+    if (loading) {
+        const empty = card.querySelector('.chart-empty-state');
+        if (empty) empty.remove();
+    }
+}
+
+/**
+ * Show an empty state message on a chart card
+ */
+function showEmptyState(canvasId, message = 'No data available') {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const card = canvas.closest('.chart-card');
+    if (!card) return;
+    const existing = card.querySelector('.chart-empty-state');
+    if (existing) existing.remove();
+    const el = document.createElement('div');
+    el.className = 'chart-empty-state';
+    el.textContent = message;
+    card.appendChild(el);
+}
+
+/**
+ * Set all chart cards to loading state
+ */
+function setAllLoading(loading) {
+    for (const id of CHART_IDS) {
+        setLoading(id, loading);
+    }
+}
 
 /**
  * Destroy a chart instance safely
@@ -59,6 +102,7 @@ function renderSPCDropdown(measurements) {
  */
 function createSPCChart(data) {
     spcChart = destroyChart(spcChart);
+    setLoading('plant-spc-chart', false);
 
     const canvas = document.getElementById('plant-spc-chart');
     if (!canvas) return;
@@ -190,8 +234,10 @@ function createSPCChart(data) {
  */
 async function loadSPCData(measurement) {
     try {
-        const enterprise = state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
-        const res = await fetch(`/api/spc/data?measurement=${encodeURIComponent(measurement)}&window=daily&enterprise=${encodeURIComponent(enterprise)}`);
+        const enterprise = getSelectedEnterprise();
+        const site = getSelectedSite();
+        const siteParam = site ? `&site=${encodeURIComponent(site)}` : '';
+        const res = await fetch(`/api/spc/data?measurement=${encodeURIComponent(measurement)}&window=daily&enterprise=${encodeURIComponent(enterprise)}${siteParam}`);
         if (!res.ok) throw new Error(`SPC data: ${res.status}`);
 
         const data = await res.json();
@@ -206,6 +252,7 @@ async function loadSPCData(measurement) {
  */
 function createDowntimeChart(data) {
     downtimeChart = destroyChart(downtimeChart);
+    setLoading('plant-downtime-chart', false);
 
     const canvas = document.getElementById('plant-downtime-chart');
     if (!canvas) return;
@@ -278,6 +325,7 @@ function createDowntimeChart(data) {
  */
 function createProductionChart(data) {
     productionChart = destroyChart(productionChart);
+    setLoading('plant-production-chart', false);
 
     const canvas = document.getElementById('plant-production-chart');
     if (!canvas) return;
@@ -371,6 +419,7 @@ function createProductionChart(data) {
  */
 function createEnergyChart(data) {
     energyChart = destroyChart(energyChart);
+    setLoading('plant-energy-chart', false);
 
     const canvas = document.getElementById('plant-energy-chart');
     if (!canvas) return;
@@ -447,7 +496,35 @@ function createEnergyChart(data) {
 function getSelectedEnterprise() {
     const dropdown = document.getElementById('plant-process-enterprise');
     if (dropdown) return dropdown.value;
-    return state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
+    return getEnterpriseParam(state);
+}
+
+/**
+ * Get the selected site from the site dropdown (empty string = all sites)
+ */
+function getSelectedSite() {
+    const dropdown = document.getElementById('plant-process-site');
+    return dropdown ? dropdown.value : '';
+}
+
+/**
+ * Fetch available sites for an enterprise and populate the site dropdown
+ */
+async function fetchSitesForEnterprise(enterprise) {
+    const dropdown = document.getElementById('plant-process-site');
+    if (!dropdown) return;
+
+    dropdown.innerHTML = '<option value="">All Lines</option>';
+
+    const data = await safeFetch(`/api/spc/sites?enterprise=${encodeURIComponent(enterprise)}`, 'SPC sites');
+    if (data && data.sites && data.sites.length > 0) {
+        for (const site of data.sites) {
+            const opt = document.createElement('option');
+            opt.value = site;
+            opt.textContent = site;
+            dropdown.appendChild(opt);
+        }
+    }
 }
 
 /**
@@ -470,9 +547,15 @@ async function safeFetch(url, label) {
 async function fetchAndRender() {
     const enterprise = getSelectedEnterprise();
 
+    const site = getSelectedSite();
+    const siteParam = site ? `&site=${encodeURIComponent(site)}` : '';
+
+    // Show loading state on all charts
+    setAllLoading(true);
+
     // Fetch all data in parallel - each request is independent
     const [spcData, downtimeData, productionData, energyData] = await Promise.all([
-        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=5`, 'SPC measurements'),
+        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements'),
         safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime'),
         safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production'),
         safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy')
@@ -483,6 +566,8 @@ async function fetchAndRender() {
         renderSPCDropdown(spcData.measurements);
         await loadSPCData(spcData.measurements[0].measurement);
     } else {
+        setLoading('plant-spc-chart', false);
+        showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
         const select = document.getElementById('plant-spc-measurement-select');
         if (select) {
             select.innerHTML = '<option>No SPC measurements available</option>';
@@ -493,10 +578,27 @@ async function fetchAndRender() {
         }
     }
 
-    // Render other charts independently
-    if (downtimeData) createDowntimeChart(downtimeData);
-    if (productionData) createProductionChart(productionData);
-    if (energyData) createEnergyChart(energyData);
+    // Render other charts independently - each clears its own loading
+    if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
+        createDowntimeChart(downtimeData);
+    } else {
+        setLoading('plant-downtime-chart', false);
+        showEmptyState('plant-downtime-chart', 'No downtime events recorded');
+    }
+
+    if (productionData && productionData.byLine && productionData.byLine.length > 0) {
+        createProductionChart(productionData);
+    } else {
+        setLoading('plant-production-chart', false);
+        showEmptyState('plant-production-chart', 'No production count data available');
+    }
+
+    if (energyData && energyData.byLine && energyData.byLine.length > 0) {
+        createEnergyChart(energyData);
+    } else {
+        setLoading('plant-energy-chart', false);
+        showEmptyState('plant-energy-chart', 'No energy consumption data available');
+    }
 }
 
 /**
@@ -504,13 +606,24 @@ async function fetchAndRender() {
  */
 export async function init() {
     // Wire up enterprise dropdown
-    const dropdown = document.getElementById('plant-process-enterprise');
-    if (dropdown) {
-        const enterprise = state.selectedFactory === 'ALL' ? 'Enterprise A' : state.selectedFactory;
-        dropdown.value = enterprise;
-        dropdown.addEventListener('change', () => fetchAndRender());
+    const enterpriseDropdown = document.getElementById('plant-process-enterprise');
+    if (enterpriseDropdown) {
+        const enterprise = getEnterpriseParam(state);
+        enterpriseDropdown.value = enterprise;
+        enterpriseDropdown.addEventListener('change', async () => {
+            await fetchSitesForEnterprise(enterpriseDropdown.value);
+            fetchAndRender();
+        });
     }
 
+    // Wire up site dropdown
+    const siteDropdown = document.getElementById('plant-process-site');
+    if (siteDropdown) {
+        siteDropdown.addEventListener('change', () => fetchAndRender());
+    }
+
+    // Fetch initial sites then render
+    await fetchSitesForEnterprise(getSelectedEnterprise());
     await fetchAndRender();
     refreshInterval = setInterval(fetchAndRender, 60000); // 1 minute refresh
 }

@@ -144,6 +144,9 @@ class BackendStack(Stack):
                     # Inference profiles (cross-region routing)
                     f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/us.anthropic.claude-*",
                     f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/anthropic.claude-*",
+                    # Amazon Nova models (tier model for cost-efficient routine analysis)
+                    "arn:aws:bedrock:*::foundation-model/amazon.nova-*",
+                    f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/us.amazon.nova-*",
                 ]
             )
         )

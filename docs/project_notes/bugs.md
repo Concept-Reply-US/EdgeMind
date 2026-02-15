@@ -383,4 +383,16 @@ This file tracks bugs encountered and their solutions for future reference.
   - Added anomaly dedup cache (30-min TTL) to prevent duplicate work orders
 - **Prevention**: When designing polling loops, always add a cheap "has anything changed?" gate before expensive operations. Use configurable intervals via env vars so operators can tune without code changes.
 
+### 2026-02-12 - Maximized Modal Content Not Scrollable (PR #53)
+- **Issue**: When maximizing any card modal (e.g., Edge Minder anomaly list), the content couldn't be scrolled
+- **Root Cause**: Base `.card` class sets `overflow: hidden` in `css/cards.css`. The `.card-modal-content > .card` rule overrode `border`, `padding`, `height`, `max-height` but NOT `overflow`. The cloned card clipped all content beyond its bounds.
+- **Solution**: Added `overflow: visible` to `.card-modal-content > .card` rule in `css/cards.css`
+- **Prevention**: When overriding base styles for a specific context, audit ALL inherited properties that could affect layout (especially `overflow`).
+
+### 2026-02-12 - Blank Anomalies in Edge Minder Panel (PR #53)
+- **Issue**: Many anomaly items in the Edge Minder panel showed only a timestamp with no description text
+- **Root Cause**: Field name mismatch between backend and frontend. Backend stored anomalies with `description` field. Frontend renderer read `anomaly.text`. The real-time path (`addClaudeInsight`) correctly mapped `description→text`, but the `initial_state` WebSocket path loaded raw backend objects that lacked the `text` field.
+- **Solution**: Two-sided fix: (1) Backend (`lib/ai/index.js`) now adds `text: anomaly.description || 'Anomaly detected'` when storing anomalies. (2) Frontend (`js/insights.js`) uses fallback chain `anomaly.text || anomaly.description || 'Anomaly detected'` in renderer.
+- **Prevention**: When two code paths produce the same data type, ensure they normalize to the same field names. The `initial_state` path and real-time WebSocket path must produce identical object shapes.
+
 <!-- Add new bugs above this line -->

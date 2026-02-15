@@ -744,7 +744,8 @@ app.get('/api/oee', async (req, res) => {
     res.json(oeeData);
   } catch (error) {
     console.error('OEE query error:', error);
-    res.status(500).json({ error: 'Failed to query OEE data' });
+    // Return valid response shape with null values instead of 500 error
+    res.json({ average: null, period: '24h', enterprise: req.query.enterprise || 'ALL', dataPoints: 0 });
   }
 });
 
@@ -953,10 +954,8 @@ app.get('/api/schema/measurements', async (req, res) => {
     res.json(response);
   } catch (error) {
     console.error('Schema measurements query error:', error);
-    res.status(500).json({
-      error: 'Failed to query schema measurements',
-      message: error.message
-    });
+    // Return valid empty response instead of 500 error
+    res.json({ measurements: [], summary: { totalMeasurements: 0, dataPoints24h: 0 }, cached: false, cacheAge: 0 });
   }
 });
 
@@ -1672,7 +1671,8 @@ app.get('/api/trends/oee-components', async (req, res) => {
   try {
     const enterprise = validateEnterprise(req.query.enterprise) || 'ALL';
     const window = trendsModule.validateTimeWindow(req.query.window);
-    const component = req.query.component || 'all';
+    const VALID_OEE_COMPONENTS = ['availability', 'performance', 'quality', 'all'];
+    const component = VALID_OEE_COMPONENTS.includes(req.query.component) ? req.query.component : 'all';
 
     const result = await trendsModule.calculateOEEComponentTrend(enterprise, window, component);
     res.json(result);
@@ -1690,8 +1690,37 @@ app.get('/api/trends/oee-components', async (req, res) => {
 // ============================================================================
 
 /**
+ * GET /api/spc/sites - Discover sites with SPC-eligible data for an enterprise
+ * Query params: enterprise
+ */
+app.get('/api/spc/sites', async (req, res) => {
+  try {
+    const enterprise = validateEnterprise(req.query.enterprise);
+    if (enterprise === null || enterprise === 'ALL') {
+      return res.status(400).json({
+        error: 'Invalid enterprise parameter. Must specify a single enterprise.'
+      });
+    }
+
+    const sites = await spcModule.discoverSPCSites(enterprise);
+
+    res.json({
+      sites,
+      enterprise,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('[API] SPC sites discovery error:', error);
+    res.status(500).json({
+      error: 'Failed to discover SPC sites',
+      message: error.message
+    });
+  }
+});
+
+/**
  * GET /api/spc/measurements - Discover top problematic measurements for SPC
- * Query params: enterprise, limit (default: 5)
+ * Query params: enterprise, limit (default: 5), site (optional)
  */
 app.get('/api/spc/measurements', async (req, res) => {
   try {
@@ -1703,11 +1732,13 @@ app.get('/api/spc/measurements', async (req, res) => {
     }
 
     const limit = parseInt(req.query.limit) || 5;
-    const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit);
+    const site = req.query.site ? validateSite(req.query.site) : null;
+    const measurements = await spcModule.discoverSPCMeasurements(enterprise, limit, site);
 
     res.json({
       measurements,
       enterprise,
+      site: site || 'ALL',
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -1725,7 +1756,7 @@ app.get('/api/spc/measurements', async (req, res) => {
  */
 app.get('/api/spc/data', async (req, res) => {
   try {
-    const measurement = req.query.measurement;
+    const measurement = sanitizeInfluxIdentifier(req.query.measurement || '');
     if (!measurement) {
       return res.status(400).json({
         error: 'Missing required parameter: measurement'
@@ -1740,7 +1771,8 @@ app.get('/api/spc/data', async (req, res) => {
     }
 
     const window = trendsModule.validateTimeWindow(req.query.window);
-    const result = await spcModule.querySPCData(measurement, window, enterprise);
+    const site = req.query.site ? validateSite(req.query.site) : null;
+    const result = await spcModule.querySPCData(measurement, window, enterprise, site);
 
     res.json(result);
   } catch (error) {
