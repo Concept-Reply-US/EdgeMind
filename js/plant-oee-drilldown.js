@@ -91,6 +91,12 @@ function renderBigOEE(container, oeeData) {
  * Render OEE by line horizontal bar chart
  */
 function renderOEEByLineChart(lines) {
+    // Destroy old chart before creating new one
+    if (oeeBarChart) {
+        oeeBarChart.destroy();
+        oeeBarChart = null;
+    }
+
     const canvas = document.getElementById('plant-oee-lines-chart');
     if (!canvas || typeof Chart === 'undefined') return;
 
@@ -145,6 +151,12 @@ function renderOEEByLineChart(lines) {
  * Render waste breakdown doughnut chart
  */
 function renderWasteChart(breakdown) {
+    // Destroy old chart before creating new one
+    if (wasteDoughnutChart) {
+        wasteDoughnutChart.destroy();
+        wasteDoughnutChart = null;
+    }
+
     const canvas = document.getElementById('plant-waste-chart');
     if (!canvas || typeof Chart === 'undefined') return;
 
@@ -219,22 +231,21 @@ async function fetchAndRender() {
         // Render big OEE display
         renderBigOEE(bigDisplay, oeeData);
 
-        // Destroy old charts before creating new ones
-        destroyCharts();
-
-        // Render OEE by line chart
+        // Render OEE by line chart (destroys old chart internally)
         const lines = linesData.lines || [];
         if (lines.length > 0) {
             renderOEEByLineChart(lines);
         }
 
-        // Render waste breakdown
+        // Render waste breakdown (destroys old chart internally)
         renderWasteChart(wasteData.breakdown || []);
 
     } catch (error) {
         console.error('OEE drilldown fetch error:', error);
         if (bigDisplay) {
-            bigDisplay.innerHTML = `<div class="view-loading" style="color: var(--accent-red);">Failed to load OEE data: ${error.message}</div>`;
+            bigDisplay.textContent = `Failed to load OEE data: ${error.message}`;
+            bigDisplay.className = 'view-loading';
+            bigDisplay.style.color = 'var(--accent-red)';
         }
     }
 }

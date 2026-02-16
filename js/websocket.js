@@ -224,9 +224,18 @@ export function handleServerMessage(message) {
                 });
             }
 
-            // Update anomaly count
+            // Update anomaly count and state.anomalies array
             if (message.data.anomalies && message.data.anomalies.length > 0) {
                 state.stats.anomalyCount += message.data.anomalies.length;
+
+                // Push new anomalies to state.anomalies for alerts panel
+                state.anomalies.push(...message.data.anomalies);
+
+                // Cap at 30 anomalies like the backend does
+                while (state.anomalies.length > 30) {
+                    state.anomalies.shift();
+                }
+
                 updateMetrics();
             }
             break;
