@@ -182,3 +182,7 @@
     0%, 100% { background-color: rgba(255, 191, 0, 0.2); }
     50% { background-color: rgba(255, 191, 0, 0.4); }
 }
+
+@keyframes chart-spin {
+    to { transform: rotate(360deg); }
+}

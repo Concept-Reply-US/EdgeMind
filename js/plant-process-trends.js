@@ -99,6 +99,7 @@ function renderSPCDropdown(measurements) {
 
 /**
  * Create SPC control chart with UCL/LCL
+ * Supports multiple series when the same measurement comes from different sources
  */
 function createSPCChart(data) {
     spcChart = destroyChart(spcChart);
@@ -108,69 +109,82 @@ function createSPCChart(data) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    const labels = data.data.map(d => new Date(d.timestamp));
-    const values = data.data.map(d => d.value);
-    const outOfControlIndices = data.data
-        .map((d, i) => d.outOfControl ? i : null)
-        .filter(i => i !== null);
+    // Use series array if available (multi-source), otherwise fall back to flat data
+    const series = data.series && data.series.length > 0
+        ? data.series
+        : [{ source: data.measurement, data: data.data }];
+
+    const traceColors = [CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.green];
+
+    // Build one line dataset per source
+    const traceDatasets = series.map((s, idx) => {
+        const color = traceColors[idx % traceColors.length];
+        const label = series.length > 1 ? s.source : data.measurement;
+        const points = s.data.map(d => ({ x: new Date(d.timestamp), y: d.value }));
+
+        return {
+            label,
+            data: points,
+            borderColor: color,
+            borderWidth: 2,
+            pointRadius: s.data.map(d => d.outOfControl ? 6 : 3),
+            pointBackgroundColor: s.data.map(d => d.outOfControl ? CHART_COLORS.red : color),
+            pointBorderColor: s.data.map(d => d.outOfControl ? CHART_COLORS.red : color),
+            fill: false,
+            tension: 0.1
+        };
+    });
+
+    // Find overall time range for control limit lines
+    const allTimestamps = series.flatMap(s => s.data.map(d => new Date(d.timestamp)));
+    const minTime = new Date(Math.min(...allTimestamps));
+    const maxTime = new Date(Math.max(...allTimestamps));
+    const limitPoints = [{ x: minTime, y: 0 }, { x: maxTime, y: 0 }];
+
+    // Control limit / reference line datasets
+    const limitDatasets = [
+        {
+            label: 'UCL',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.ucl })),
+            borderColor: CHART_COLORS.red,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'Mean',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.mean })),
+            borderColor: CHART_COLORS.green,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'LCL',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.lcl })),
+            borderColor: CHART_COLORS.red,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'Target',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.target })),
+            borderColor: CHART_COLORS.amber,
+            borderWidth: 2,
+            borderDash: [10, 5],
+            pointRadius: 0,
+            fill: false
+        }
+    ];
 
     spcChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels,
-            datasets: [
-                {
-                    label: data.measurement,
-                    data: values,
-                    borderColor: CHART_COLORS.cyan,
-                    borderWidth: 2,
-                    pointRadius: values.map((_, i) => outOfControlIndices.includes(i) ? 6 : 3),
-                    pointBackgroundColor: values.map((_, i) =>
-                        outOfControlIndices.includes(i) ? CHART_COLORS.red : CHART_COLORS.cyan
-                    ),
-                    pointBorderColor: values.map((_, i) =>
-                        outOfControlIndices.includes(i) ? CHART_COLORS.red : CHART_COLORS.cyan
-                    ),
-                    fill: false,
-                    tension: 0.1
-                },
-                {
-                    label: 'UCL (Upper Control Limit)',
-                    data: Array(values.length).fill(data.controlLimits.ucl),
-                    borderColor: CHART_COLORS.red,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Mean',
-                    data: Array(values.length).fill(data.controlLimits.mean),
-                    borderColor: CHART_COLORS.green,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'LCL (Lower Control Limit)',
-                    data: Array(values.length).fill(data.controlLimits.lcl),
-                    borderColor: CHART_COLORS.red,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Target',
-                    data: Array(values.length).fill(data.controlLimits.target),
-                    borderColor: CHART_COLORS.amber,
-                    borderWidth: 2,
-                    borderDash: [10, 5],
-                    pointRadius: 0,
-                    fill: false
-                }
-            ]
+            datasets: [...traceDatasets, ...limitDatasets]
         },
         options: {
             responsive: true,
@@ -186,16 +200,18 @@ function createSPCChart(data) {
                 },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => {
-                            if (ctx.datasetIndex === 0) {
-                                const idx = ctx.dataIndex;
-                                const point = data.data[idx];
-                                return [
-                                    `Value: ${ctx.parsed.y.toFixed(2)}`,
-                                    point.outOfControl ? `⚠️ OUT OF CONTROL (${point.violationType})` : '✓ In Control'
-                                ];
+                        label: (tipCtx) => {
+                            // Trace datasets (index < number of series)
+                            if (tipCtx.datasetIndex < series.length) {
+                                const s = series[tipCtx.datasetIndex];
+                                const point = s.data[tipCtx.dataIndex];
+                                const lines = [`${tipCtx.dataset.label}: ${tipCtx.parsed.y.toFixed(2)}`];
+                                if (point && point.outOfControl) {
+                                    lines.push(`⚠️ OUT OF CONTROL (${point.violationType})`);
+                                }
+                                return lines;
                             }
-                            return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`;
+                            return `${tipCtx.dataset.label}: ${tipCtx.parsed.y.toFixed(2)}`;
                         }
                     }
                 }
@@ -553,52 +569,66 @@ async function fetchAndRender() {
     // Show loading state on all charts
     setAllLoading(true);
 
-    // Fetch all data in parallel - each request is independent
-    const [spcData, downtimeData, productionData, energyData] = await Promise.all([
-        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements'),
-        safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime'),
-        safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production'),
-        safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy')
-    ]);
+    // Launch all fetches immediately (don't await yet - true parallelization)
+    const spcPromise = safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements');
+    const downtimePromise = safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime');
+    const productionPromise = safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production');
+    const energyPromise = safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy');
 
-    // Render SPC independently - don't block other charts
-    if (spcData && spcData.measurements && spcData.measurements.length > 0) {
-        renderSPCDropdown(spcData.measurements);
-        await loadSPCData(spcData.measurements[0].measurement);
-    } else {
-        setLoading('plant-spc-chart', false);
-        showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
-        const select = document.getElementById('plant-spc-measurement-select');
-        if (select) {
-            select.innerHTML = '<option>No SPC measurements available</option>';
+    // Render fast charts as soon as they resolve (don't wait for SPC)
+    Promise.all([downtimePromise, productionPromise, energyPromise]).then(([downtimeData, productionData, energyData]) => {
+        // Downtime chart
+        if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
+            createDowntimeChart(downtimeData);
+        } else {
+            setLoading('plant-downtime-chart', false);
+            showEmptyState('plant-downtime-chart', 'No downtime events recorded');
         }
-        const cpkBadge = document.getElementById('spc-cpk-badge');
-        if (cpkBadge) {
-            cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
-        }
-    }
 
-    // Render other charts independently - each clears its own loading
-    if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
-        createDowntimeChart(downtimeData);
-    } else {
+        // Production chart
+        if (productionData && productionData.byLine && productionData.byLine.length > 0) {
+            createProductionChart(productionData);
+        } else {
+            setLoading('plant-production-chart', false);
+            showEmptyState('plant-production-chart', 'No production count data available');
+        }
+
+        // Energy chart
+        if (energyData && energyData.byLine && energyData.byLine.length > 0) {
+            createEnergyChart(energyData);
+        } else {
+            setLoading('plant-energy-chart', false);
+            showEmptyState('plant-energy-chart', 'No energy consumption data available');
+        }
+    }).catch(error => {
+        console.error('Fast charts error:', error);
         setLoading('plant-downtime-chart', false);
-        showEmptyState('plant-downtime-chart', 'No downtime events recorded');
-    }
-
-    if (productionData && productionData.byLine && productionData.byLine.length > 0) {
-        createProductionChart(productionData);
-    } else {
         setLoading('plant-production-chart', false);
-        showEmptyState('plant-production-chart', 'No production count data available');
-    }
-
-    if (energyData && energyData.byLine && energyData.byLine.length > 0) {
-        createEnergyChart(energyData);
-    } else {
         setLoading('plant-energy-chart', false);
-        showEmptyState('plant-energy-chart', 'No energy consumption data available');
-    }
+    });
+
+    // SPC renders independently when ready (slow endpoint doesn't block others)
+    spcPromise.then(async (spcData) => {
+        if (spcData && spcData.measurements && spcData.measurements.length > 0) {
+            renderSPCDropdown(spcData.measurements);
+            await loadSPCData(spcData.measurements[0].measurement);
+        } else {
+            setLoading('plant-spc-chart', false);
+            showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
+            const select = document.getElementById('plant-spc-measurement-select');
+            if (select) {
+                select.innerHTML = '<option>No SPC measurements available</option>';
+            }
+            const cpkBadge = document.getElementById('spc-cpk-badge');
+            if (cpkBadge) {
+                cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
+            }
+        }
+    }).catch(error => {
+        console.error('SPC error:', error);
+        setLoading('plant-spc-chart', false);
+        showEmptyState('plant-spc-chart', 'Failed to load SPC data');
+    });
 }
 
 /**

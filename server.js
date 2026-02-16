@@ -233,8 +233,18 @@ mqttClient.on('connect', async () => {
   // Start the agentic trend analysis loop
   aiModule.startAgenticLoop();
 
-  // Initialize demo engine with MQTT client
-  demoEngine.init({ mqttClient });
+  // Initialize demo engine with MQTT client and AI analysis hooks
+  demoEngine.init({
+    mqttClient,
+    onScenarioStart: (scenario) => {
+      // Trigger demo-aware fast path analysis when scenario starts
+      aiModule.triggerDemoAnalysis(scenario);
+    },
+    onScenarioStop: () => {
+      // Cancel pending demo analysis when scenario stops
+      aiModule.cancelDemoAnalysis();
+    }
+  });
 
   // Initialize CESMII SM Profile handler and publisher
   if (CONFIG.cesmii.enabled) {

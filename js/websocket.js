@@ -7,6 +7,7 @@ import { addMQTTMessageToStream } from './stream.js';
 import { topicToMeasurement, getEnterpriseParam } from './utils.js';
 import { fetchActiveSensorCount } from './dashboard-data.js';
 import { handleRealtimeWorkOrder } from './cesmii.js';
+import { showNotification } from './notifications.js';
 
 /**
  * Schedule a reconnection attempt with exponential backoff
@@ -211,6 +212,17 @@ export function handleServerMessage(message) {
                 state.insights.shift();
             }
             addClaudeInsight(message.data);
+
+            // Show push notification for demo-triggered insights
+            if (message.data.demoTriggered) {
+                showNotification({
+                    summary: message.data.summary || message.data.text || 'Anomaly detected by AI',
+                    severity: message.data.severity || 'medium',
+                    badge: 'AI ALERT',
+                    meta: message.data.demoScenario ? `Scenario: ${message.data.demoScenario}` : undefined,
+                    dismissMs: 20000
+                });
+            }
 
             // Update anomaly count
             if (message.data.anomalies && message.data.anomalies.length > 0) {

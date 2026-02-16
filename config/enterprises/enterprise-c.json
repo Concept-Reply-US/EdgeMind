@@ -1,0 +1,125 @@
+{
+  "name": "Enterprise C",
+  "industry": "Bioprocessing / Pharma",
+  "domain": "pharma",
+  "batchControl": "ISA-88",
+  "analysisMode": "batch",
+  "equipment": {
+    "CHR01": {
+      "type": "chromatography",
+      "name": "Chromatography Unit",
+      "primaryPhase": "purification",
+      "stateMetric": "CHR01_STATE",
+      "phaseMetric": "CHR01_PHASE",
+      "criticalPV": [
+        "chrom_CHR01_PT002_PV",
+        "chrom_CHR01_AT001_PV",
+        "chrom_CHR01_FT002_PV"
+      ]
+    },
+    "SUB250": {
+      "type": "single-use-bioreactor",
+      "name": "Single-Use Bioreactor 250L",
+      "primaryPhase": "cultivation",
+      "stateMetric": "SUB250_STATE",
+      "phaseMetric": "SUB250_PHASE",
+      "criticalPV": [
+        "sub_AIC_250_003_PV_pH",
+        "sub_AIC_250_001_PV_percent",
+        "sub_TIC_250_001_PV_Celsius"
+      ]
+    },
+    "SUM500": {
+      "type": "single-use-mixer",
+      "name": "Single-Use Mixer 500L",
+      "primaryPhase": "preparation",
+      "stateMetric": "SUM500_STATUS",
+      "phaseMetric": "SUM500_PHASE",
+      "criticalPV": [
+        "sum_TIC_500_001_PV",
+        "sum_SIC_500_001_PV",
+        "sum_WIC_500_001_PV"
+      ]
+    },
+    "TFF300": {
+      "type": "tangential-flow-filtration",
+      "name": "Tangential Flow Filtration 300",
+      "primaryPhase": "filtration",
+      "stateMetric": "TFF300_STATE",
+      "phaseMetric": "TFF300_PHASE",
+      "criticalPV": [
+        "tff_PIC_300_001_PV",
+        "tff_FIC_300_001_PV",
+        "tff_TMP_300_PV"
+      ]
+    }
+  },
+  "isa88Phases": {
+    "bioreactor": ["INOCULATION", "GROWTH", "PRODUCTION", "HARVEST"],
+    "chromatography": ["EQUILIBRATION", "LOADING", "WASHING", "ELUTION", "REGENERATION"],
+    "filtration": ["PRIMING", "CONCENTRATION", "DIAFILTRATION", "RECOVERY"],
+    "mixer": ["CHARGING", "MIXING", "TRANSFER"]
+  },
+  "criticalMetrics": [
+    "STATE",
+    "PHASE",
+    "BATCH_ID",
+    "pH",
+    "dissolved_oxygen",
+    "temperature",
+    "pressure"
+  ],
+  "concerns": [
+    "contamination",
+    "batch_deviation",
+    "sterility",
+    "phase_timeout",
+    "PV_out_of_range"
+  ],
+  "safeRanges": {
+    "pH": {
+      "min": 6.8,
+      "max": 7.4,
+      "critical": true,
+      "unit": "pH"
+    },
+    "dissolved_oxygen": {
+      "min": 30,
+      "max": 70,
+      "unit": "%"
+    },
+    "temperature": {
+      "min": 35,
+      "max": 39,
+      "unit": "°C"
+    },
+    "pressure": {
+      "min": 0.5,
+      "max": 2.0,
+      "unit": "bar"
+    }
+  },
+  "cleanroomThresholds": {
+    "PM2.5": {
+      "warning": 5,
+      "critical": 10,
+      "unit": "µg/m³"
+    },
+    "temperature": {
+      "min": 18,
+      "max": 25,
+      "unit": "°C"
+    },
+    "humidity": {
+      "min": 40,
+      "max": 60,
+      "unit": "%"
+    }
+  },
+  "wasteMetrics": ["chrom_CHR01_WASTE_PV"],
+  "wasteThresholds": {
+    "warning": 5,
+    "critical": 15,
+    "unit": "L"
+  }
+}
