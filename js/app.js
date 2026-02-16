@@ -366,17 +366,16 @@ window.addEventListener('load', () => {
     fetchLineOEE();
 
     // Update message rate every second
-    setInterval(updateMessageRate, 1000);
-
-    // Refresh OEE, breakdown, and factory status every 30 seconds
-    setInterval(fetchOEE, 30000);
-    setInterval(fetchOEEBreakdown, 30000);
-    setInterval(fetchFactoryStatus, 30000);
-    setInterval(fetchWasteTrends, 30000);
-    setInterval(fetchScrapByLine, 30000);
-    setInterval(fetchQualityMetrics, 30000);
-
-    // Refresh equipment states and line OEE every 30 seconds
-    setInterval(fetchEquipmentStates, 30000);
-    setInterval(fetchLineOEE, 30000);
+    // Store intervals in array for potential cleanup
+    const globalIntervals = [
+        setInterval(updateMessageRate, 1000),
+        setInterval(fetchOEE, 30000),
+        setInterval(fetchOEEBreakdown, 30000),
+        setInterval(fetchFactoryStatus, 30000),
+        setInterval(fetchWasteTrends, 30000),
+        setInterval(fetchScrapByLine, 30000),
+        setInterval(fetchQualityMetrics, 30000),
+        setInterval(fetchEquipmentStates, 30000),
+        setInterval(fetchLineOEE, 30000)
+    ];
 });
