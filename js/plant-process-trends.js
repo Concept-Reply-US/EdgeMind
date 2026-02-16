@@ -29,6 +29,40 @@ const DARK_THEME = {
 
 const CHART_IDS = ['plant-spc-chart', 'plant-downtime-chart', 'plant-production-chart', 'plant-energy-chart'];
 
+// Cache for legend states (which datasets are hidden) to preserve user selections across refreshes
+const legendStateCache = new Map();
+
+/**
+ * Save legend state before destroying chart
+ */
+function saveLegendState(chart, canvasId) {
+    if (!chart || !chart.data || !chart.data.datasets) return;
+    const hiddenStates = chart.data.datasets.map((_, index) => {
+        const meta = chart.getDatasetMeta(index);
+        return meta ? meta.hidden : false;
+    });
+    legendStateCache.set(canvasId, hiddenStates);
+}
+
+/**
+ * Restore legend state after creating chart
+ */
+function restoreLegendState(chart, canvasId) {
+    if (!chart || !legendStateCache.has(canvasId)) return;
+    const hiddenStates = legendStateCache.get(canvasId);
+    if (!hiddenStates) return;
+
+    hiddenStates.forEach((isHidden, index) => {
+        if (index < chart.data.datasets.length) {
+            const meta = chart.getDatasetMeta(index);
+            if (meta) {
+                meta.hidden = isHidden;
+            }
+        }
+    });
+    chart.update('none'); // Update without animation
+}
+
 /**
  * Toggle loading spinner on a chart card
  */
@@ -70,10 +104,13 @@ function setAllLoading(loading) {
 }
 
 /**
- * Destroy a chart instance safely
+ * Destroy a chart instance safely, saving legend state first
  */
-function destroyChart(chart) {
+function destroyChart(chart, canvasId) {
     if (chart && typeof chart.destroy === 'function') {
+        if (canvasId) {
+            saveLegendState(chart, canvasId);
+        }
         chart.destroy();
     }
     return null;
@@ -98,10 +135,11 @@ function renderSPCDropdown(measurements) {
  * Supports multiple series when the same measurement comes from different sources
  */
 function createSPCChart(data) {
-    spcChart = destroyChart(spcChart);
-    setLoading('plant-spc-chart', false);
+    const canvasId = 'plant-spc-chart';
+    spcChart = destroyChart(spcChart, canvasId);
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('plant-spc-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
@@ -233,6 +271,9 @@ function createSPCChart(data) {
         }
     });
 
+    // Restore legend state from previous render
+    restoreLegendState(spcChart, canvasId);
+
     // Show Cpk badge
     const cpkBadge = document.getElementById('spc-cpk-badge');
     if (cpkBadge) {
@@ -270,10 +311,11 @@ async function loadSPCData(measurement) {
  * Create enterprise-specific downtime Pareto
  */
 function createDowntimeChart(data) {
-    downtimeChart = destroyChart(downtimeChart);
-    setLoading('plant-downtime-chart', false);
+    const canvasId = 'plant-downtime-chart';
+    downtimeChart = destroyChart(downtimeChart, canvasId);
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('plant-downtime-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
@@ -337,16 +379,20 @@ function createDowntimeChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(downtimeChart, canvasId);
 }
 
 /**
  * Create production volume vs target grouped bar chart
  */
 function createProductionChart(data) {
-    productionChart = destroyChart(productionChart);
-    setLoading('plant-production-chart', false);
+    const canvasId = 'plant-production-chart';
+    productionChart = destroyChart(productionChart, canvasId);
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('plant-production-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
@@ -431,16 +477,20 @@ function createProductionChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(productionChart, canvasId);
 }
 
 /**
  * Create energy consumption multi-line chart
  */
 function createEnergyChart(data) {
-    energyChart = destroyChart(energyChart);
-    setLoading('plant-energy-chart', false);
+    const canvasId = 'plant-energy-chart';
+    energyChart = destroyChart(energyChart, canvasId);
+    setLoading(canvasId, false);
 
-    const canvas = document.getElementById('plant-energy-chart');
+    const canvas = document.getElementById(canvasId);
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
@@ -507,6 +557,9 @@ function createEnergyChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(energyChart, canvasId);
 }
 
 /**
@@ -687,8 +740,8 @@ export function cleanup() {
         clearInterval(refreshInterval);
         refreshInterval = null;
     }
-    spcChart = destroyChart(spcChart);
-    downtimeChart = destroyChart(downtimeChart);
-    productionChart = destroyChart(productionChart);
-    energyChart = destroyChart(energyChart);
+    spcChart = destroyChart(spcChart, 'plant-spc-chart');
+    downtimeChart = destroyChart(downtimeChart, 'plant-downtime-chart');
+    productionChart = destroyChart(productionChart, 'plant-production-chart');
+    energyChart = destroyChart(energyChart, 'plant-energy-chart');
 }
