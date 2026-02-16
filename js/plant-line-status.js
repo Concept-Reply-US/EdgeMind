@@ -2,8 +2,10 @@
 // Real-time production line monitoring with OEE, equipment states, and A/P/Q breakdown
 
 import { state } from './state.js';
+import { escapeHtml } from './utils.js';
 
 let refreshInterval = null;
+let abortController = null;
 
 /**
  * Get OEE color class based on value
@@ -51,8 +53,8 @@ function renderLineCard(line, equipCounts) {
     return `
         <div class="line-status-card">
             <div class="line-card-header">
-                <div class="line-card-name">${line.site || 'Unknown'}</div>
-                <div class="line-card-enterprise">${line.enterprise || ''}</div>
+                <div class="line-card-name">${escapeHtml(line.site || 'Unknown')}</div>
+                <div class="line-card-enterprise">${escapeHtml(line.enterprise || '')}</div>
             </div>
             <div class="line-oee-value ${oeeClass}">${oee.toFixed(1)}<span class="oee-unit">%</span></div>
             <div class="line-oee-label">OEE</div>
@@ -96,15 +98,26 @@ async function fetchAndRender() {
     if (!grid) return;
 
     try {
+        // Abort any previous in-flight requests
+        if (abortController) abortController.abort();
+        abortController = new AbortController();
+
+        // Create timeout that aborts after 10 seconds
+        const timeoutId = setTimeout(() => abortController.abort(), 10000);
+        const signal = abortController.signal;
+
         const enterpriseParam = state.selectedFactory && state.selectedFactory !== 'ALL'
             ? `?enterprise=${encodeURIComponent(state.selectedFactory)}`
             : '';
 
         const [linesRes, equipRes, batchRes] = await Promise.all([
-            fetch(`/api/oee/lines${enterpriseParam}`),
-            fetch(`/api/equipment/states${enterpriseParam}`),
-            fetch(`/api/batch/status`)
+            fetch(`/api/oee/lines${enterpriseParam}`, { signal }),
+            fetch(`/api/equipment/states${enterpriseParam}`, { signal }),
+            fetch(`/api/batch/status`, { signal })
         ]);
+
+        // Clear timeout since fetch completed
+        clearTimeout(timeoutId);
 
         if (!linesRes.ok) throw new Error(`OEE lines: ${linesRes.status}`);
         if (!equipRes.ok) throw new Error(`Equipment states: ${equipRes.status}`);
@@ -132,9 +145,17 @@ async function fetchAndRender() {
 
         grid.innerHTML = cards.join('');
     } catch (error) {
+        // Silently return if request was aborted (user switched factories or timeout)
+        if (error.name === 'AbortError') return;
+
         console.error('Line status fetch error:', error);
         if (grid) {
-            grid.innerHTML = `<div class="view-loading" style="color: var(--accent-red);">Failed to load line data: ${error.message}</div>`;
+            grid.textContent = '';
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'view-loading';
+            errorDiv.style.color = 'var(--accent-red)';
+            errorDiv.textContent = `Failed to load line data: ${error.message}`;
+            grid.appendChild(errorDiv);
         }
     }
 }
@@ -143,6 +164,7 @@ async function fetchAndRender() {
  * Initialize line status view
  */
 export async function init() {
+    if (refreshInterval) clearInterval(refreshInterval);
     await fetchAndRender();
     refreshInterval = setInterval(fetchAndRender, 15000);
 }
@@ -154,5 +176,9 @@ export function cleanup() {
     if (refreshInterval) {
         clearInterval(refreshInterval);
         refreshInterval = null;
+    }
+    if (abortController) {
+        abortController.abort();
+        abortController = null;
     }
 }

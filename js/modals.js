@@ -61,15 +61,17 @@ export function openAnomalyModal(anomaly) {
     const severityUpper = severity.toUpperCase();
     severityEl.innerHTML = '<span class="anomaly-modal-severity ' + escapeHtml(severity) + '">' + escapeHtml(severityUpper) + '</span>';
 
-    const date = new Date(anomaly.timestamp);
-    const formattedDate = date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
+    const date = anomaly.timestamp ? new Date(anomaly.timestamp) : null;
+    const formattedDate = date && !isNaN(date.getTime())
+        ? date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        })
+        : 'Just now';
     timestampEl.textContent = formattedDate;
 
     overlay.classList.add('active');
