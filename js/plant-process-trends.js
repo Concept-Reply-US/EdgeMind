@@ -90,11 +90,6 @@ function renderSPCDropdown(measurements) {
             ${m.displayName} - Cpk: ${m.statistics.cpk.toFixed(2)} (${m.reason})
         </option>
     `).join('');
-
-    select.addEventListener('change', (e) => {
-        const selectedMeasurement = e.target.value;
-        loadSPCData(selectedMeasurement);
-    });
 }
 
 /**
@@ -137,6 +132,13 @@ function createSPCChart(data) {
 
     // Find overall time range for control limit lines
     const allTimestamps = series.flatMap(s => s.data.map(d => new Date(d.timestamp)));
+
+    // Guard against empty timestamps to prevent Chart.js crash
+    if (allTimestamps.length === 0) {
+        showEmptyState('plant-spc-chart', 'No data points for selected measurement');
+        return;
+    }
+
     const minTime = new Date(Math.min(...allTimestamps));
     const maxTime = new Date(Math.max(...allTimestamps));
     const limitPoints = [{ x: minTime, y: 0 }, { x: maxTime, y: 0 }];
@@ -642,14 +644,20 @@ export async function init() {
         enterpriseDropdown.value = enterprise;
         enterpriseDropdown.addEventListener('change', async () => {
             await fetchSitesForEnterprise(enterpriseDropdown.value);
-            fetchAndRender();
+            await fetchAndRender();
         });
     }
 
     // Wire up site dropdown
     const siteDropdown = document.getElementById('plant-process-site');
     if (siteDropdown) {
-        siteDropdown.addEventListener('change', () => fetchAndRender());
+        siteDropdown.addEventListener('change', async () => await fetchAndRender());
+    }
+
+    // Wire up SPC measurement dropdown (once, to avoid listener leak)
+    const spcSelect = document.getElementById('plant-spc-measurement-select');
+    if (spcSelect) {
+        spcSelect.addEventListener('change', (e) => loadSPCData(e.target.value));
     }
 
     // Fetch initial sites then render
