@@ -341,6 +341,11 @@ mqttClient.on('message', async (topic, message) => {
     }
   }
 
+  // Skip non-factory topics (broker system metrics, etc.)
+  if (!actualTopic.startsWith('Enterprise')) {
+    return;
+  }
+
   // CESMII SM PROFILE HANDLING
   // Check if this is a CESMII JSON-LD payload (after Sparkplug, before standard processing)
   if (CONFIG.cesmii.enabled) {
