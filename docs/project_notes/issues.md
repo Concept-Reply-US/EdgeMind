@@ -181,4 +181,22 @@ Completed work and issue tracking. For quick reference - full details live in gi
 - **Commits**: `dc63908` (modal scroll), `4f6af56` (anomaly dedup overhaul)
 - **Files**: `css/cards.css`, `js/insights.js`, `lib/ai/index.js`, `lib/state.js`, `lib/domain-context.js`
 
+### 2026-02-16 - Fix Enterprise Comparison Sites Not Rendering
+- **Status**: Completed
+- **Description**: Enterprise Comparison view showed "No site data available" for all enterprises. Backend returned array, frontend expected object keyed by name. Fixed array-to-object conversion in `js/coo-enterprise.js`.
+- **PR**: #82 (merged to dev), #84 (merged to dev)
+- **Files**: `js/coo-enterprise.js`
+
+### 2026-02-16 - Filter Non-Factory MQTT Topics and Vendor Site Pollution from OEE
+- **Status**: Completed
+- **Description**: Filtered "hivemq" broker system topic and vendor integration sites (prosys, opto22, maintainx) from factory data. Added ingestion guard in `server.js`, denylist in `queryFactoryStatus()`, and site allowlist in OEE v2 Flux queries. Enterprise A OEE corrected from 48.2% to ~96%.
+- **PR**: #84 (merged to dev)
+- **Files**: `server.js`, `lib/oee/index.js`, `js/coo-enterprise.js`
+
+### 2026-02-16 - Config-Driven Vendor Data Pollution Fix Across 5 Endpoints
+- **Status**: Completed
+- **Description**: Created centralized factory site allowlist (`config/factory-sites.json` + `lib/factory-sites.js`) to filter vendor integration data from equipment states, line status, OEE calculations, factory status, and agent context. Replaced ad-hoc denylist with config-driven allowlist approach (ADR-020).
+- **PR**: #86 (merged to dev)
+- **Files**: `config/factory-sites.json` (new), `lib/factory-sites.js` (new), `server.js`, `lib/oee/index.js`, `lib/ai/index.js`
+
 <!-- Add new entries above this line -->

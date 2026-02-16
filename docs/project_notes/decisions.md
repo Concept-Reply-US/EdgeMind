@@ -755,4 +755,37 @@ Implement four priority levels of improvements:
 
 ---
 
+### ADR-020: Config-Driven Factory Site Allowlist (2026-02-16)
+
+**Context:**
+- The shared ProveIt! MQTT broker carries data from many vendors and integrations (prosys, opto22, maintainx, hivemq, etc.)
+- These vendor topics publish under enterprise namespaces (e.g., `Enterprise A/prosys/...`) but are NOT real factory production sites
+- Vendor data polluted OEE calculations (48.2% vs real 96%), equipment states, line status, and AI agent context
+- A denylist approach was tried first but proved fragile — new vendors appear frequently on the shared broker
+
+**Decision:**
+- Created `config/factory-sites.json` — a JSON configuration file listing real factory sites per enterprise
+- Created `lib/factory-sites.js` — a module providing `isRealSite(enterprise, site)`, `getRealSites(enterprise)`, and `getFluxSiteFilter(enterprise)` helper functions
+- **Allowlist approach chosen over denylist** because new vendor integrations appear frequently; an allowlist requires explicit opt-in for new sites rather than remembering to add new vendors to a denylist
+- JSON config allows site changes without code modifications
+- Applied at both ingestion (equipment state cache) and query level (Flux queries, API endpoints) as **defense in depth**
+
+**Alternatives Considered:**
+- Denylist approach → Rejected: fragile, requires updating whenever new vendors join the broker. Initial denylist for `hivemq` worked but didn't catch prosys, opto22, maintainx, etc.
+- Hardcoded site lists in each module → Rejected: duplication, inconsistency risk across 5+ filtering points
+- Topic-level filtering at MQTT subscription → Rejected: can't use wildcard `#` subscription, would miss legitimate new topics
+
+**Consequences:**
+- ✅ Single source of truth for real factory sites
+- ✅ Easy to update — edit JSON file, no code changes needed
+- ✅ Applied at 5 filtering points (equipment cache, 3 API endpoints, agent context)
+- ✅ Defense in depth — filters at both ingestion and query layers
+- ⚠️ New real sites must be added to `config/factory-sites.json` or they'll be filtered out
+- ⚠️ JSON file must be deployed with the application (included in Docker image)
+
+**Files Created:** `config/factory-sites.json`, `lib/factory-sites.js`
+**Files Modified:** `server.js`, `lib/oee/index.js`, `lib/ai/index.js` (and others at filtering points)
+
+---
+
 <!-- Add new decisions above this line -->
