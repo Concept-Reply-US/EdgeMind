@@ -12,6 +12,7 @@ RUN npm ci --only=production
 # Copy application code
 COPY server.js ./
 COPY lib/ ./lib/
+COPY config/ ./config/
 
 # Copy frontend files (served by backend)
 COPY index.html ./
