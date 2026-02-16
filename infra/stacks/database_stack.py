@@ -73,8 +73,8 @@ class DatabaseStack(Stack):
         task_definition = ecs.FargateTaskDefinition(
             self, "InfluxDBTaskDef",
             family=f"{name_prefix}-influxdb",
-            cpu=1024,  # 1 vCPU
-            memory_limit_mib=2048,  # 2 GB - InfluxDB needs headroom for shard compaction
+            cpu=2048,  # 2 vCPU
+            memory_limit_mib=4096,  # 4 GB - InfluxDB needs headroom for shard compaction
             runtime_platform=ecs.RuntimePlatform(
                 cpu_architecture=ecs.CpuArchitecture.X86_64,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX
