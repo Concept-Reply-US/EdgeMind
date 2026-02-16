@@ -99,6 +99,7 @@ function renderSPCDropdown(measurements) {
 
 /**
  * Create SPC control chart with UCL/LCL
+ * Supports multiple series when the same measurement comes from different sources
  */
 function createSPCChart(data) {
     spcChart = destroyChart(spcChart);
@@ -108,69 +109,82 @@ function createSPCChart(data) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
-    const labels = data.data.map(d => new Date(d.timestamp));
-    const values = data.data.map(d => d.value);
-    const outOfControlIndices = data.data
-        .map((d, i) => d.outOfControl ? i : null)
-        .filter(i => i !== null);
+    // Use series array if available (multi-source), otherwise fall back to flat data
+    const series = data.series && data.series.length > 0
+        ? data.series
+        : [{ source: data.measurement, data: data.data }];
+
+    const traceColors = [CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.blue, CHART_COLORS.pink, CHART_COLORS.green];
+
+    // Build one line dataset per source
+    const traceDatasets = series.map((s, idx) => {
+        const color = traceColors[idx % traceColors.length];
+        const label = series.length > 1 ? s.source : data.measurement;
+        const points = s.data.map(d => ({ x: new Date(d.timestamp), y: d.value }));
+
+        return {
+            label,
+            data: points,
+            borderColor: color,
+            borderWidth: 2,
+            pointRadius: s.data.map(d => d.outOfControl ? 6 : 3),
+            pointBackgroundColor: s.data.map(d => d.outOfControl ? CHART_COLORS.red : color),
+            pointBorderColor: s.data.map(d => d.outOfControl ? CHART_COLORS.red : color),
+            fill: false,
+            tension: 0.1
+        };
+    });
+
+    // Find overall time range for control limit lines
+    const allTimestamps = series.flatMap(s => s.data.map(d => new Date(d.timestamp)));
+    const minTime = new Date(Math.min(...allTimestamps));
+    const maxTime = new Date(Math.max(...allTimestamps));
+    const limitPoints = [{ x: minTime, y: 0 }, { x: maxTime, y: 0 }];
+
+    // Control limit / reference line datasets
+    const limitDatasets = [
+        {
+            label: 'UCL',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.ucl })),
+            borderColor: CHART_COLORS.red,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'Mean',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.mean })),
+            borderColor: CHART_COLORS.green,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'LCL',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.lcl })),
+            borderColor: CHART_COLORS.red,
+            borderWidth: 1,
+            borderDash: [5, 5],
+            pointRadius: 0,
+            fill: false
+        },
+        {
+            label: 'Target',
+            data: limitPoints.map(p => ({ x: p.x, y: data.controlLimits.target })),
+            borderColor: CHART_COLORS.amber,
+            borderWidth: 2,
+            borderDash: [10, 5],
+            pointRadius: 0,
+            fill: false
+        }
+    ];
 
     spcChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels,
-            datasets: [
-                {
-                    label: data.measurement,
-                    data: values,
-                    borderColor: CHART_COLORS.cyan,
-                    borderWidth: 2,
-                    pointRadius: values.map((_, i) => outOfControlIndices.includes(i) ? 6 : 3),
-                    pointBackgroundColor: values.map((_, i) =>
-                        outOfControlIndices.includes(i) ? CHART_COLORS.red : CHART_COLORS.cyan
-                    ),
-                    pointBorderColor: values.map((_, i) =>
-                        outOfControlIndices.includes(i) ? CHART_COLORS.red : CHART_COLORS.cyan
-                    ),
-                    fill: false,
-                    tension: 0.1
-                },
-                {
-                    label: 'UCL (Upper Control Limit)',
-                    data: Array(values.length).fill(data.controlLimits.ucl),
-                    borderColor: CHART_COLORS.red,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Mean',
-                    data: Array(values.length).fill(data.controlLimits.mean),
-                    borderColor: CHART_COLORS.green,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'LCL (Lower Control Limit)',
-                    data: Array(values.length).fill(data.controlLimits.lcl),
-                    borderColor: CHART_COLORS.red,
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 0,
-                    fill: false
-                },
-                {
-                    label: 'Target',
-                    data: Array(values.length).fill(data.controlLimits.target),
-                    borderColor: CHART_COLORS.amber,
-                    borderWidth: 2,
-                    borderDash: [10, 5],
-                    pointRadius: 0,
-                    fill: false
-                }
-            ]
+            datasets: [...traceDatasets, ...limitDatasets]
         },
         options: {
             responsive: true,
@@ -186,16 +200,18 @@ function createSPCChart(data) {
                 },
                 tooltip: {
                     callbacks: {
-                        label: (ctx) => {
-                            if (ctx.datasetIndex === 0) {
-                                const idx = ctx.dataIndex;
-                                const point = data.data[idx];
-                                return [
-                                    `Value: ${ctx.parsed.y.toFixed(2)}`,
-                                    point.outOfControl ? `⚠️ OUT OF CONTROL (${point.violationType})` : '✓ In Control'
-                                ];
+                        label: (tipCtx) => {
+                            // Trace datasets (index < number of series)
+                            if (tipCtx.datasetIndex < series.length) {
+                                const s = series[tipCtx.datasetIndex];
+                                const point = s.data[tipCtx.dataIndex];
+                                const lines = [`${tipCtx.dataset.label}: ${tipCtx.parsed.y.toFixed(2)}`];
+                                if (point && point.outOfControl) {
+                                    lines.push(`⚠️ OUT OF CONTROL (${point.violationType})`);
+                                }
+                                return lines;
                             }
-                            return `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)}`;
+                            return `${tipCtx.dataset.label}: ${tipCtx.parsed.y.toFixed(2)}`;
                         }
                     }
                 }
