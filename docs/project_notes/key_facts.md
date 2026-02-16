@@ -507,6 +507,26 @@ lib/cesmii/
 - **Enterprise A**: Uses Tier 2 (pre-computed A x P x Q components — `OEE_Availability`, `OEE_Performance`, `OEE_Quality`)
 - **Enterprise B**: Uses Tier 1 (pre-computed overall — `metric_oee`)
 
+### OEE Measurement Details (IMPORTANT)
+- **Enterprise A** measurements: `OEE_Availability`, `OEE_Performance`, `OEE_Quality` (from Dallas site, NOT aveva's `_OEE_Availability`)
+- **Enterprise B** measurements: `metric_oee`, `metric_availability`, `metric_performance`, `metric_quality` (from Site1/Site2/Site3)
+- ⚠️ aveva publishes `_OEE_Availability` (leading underscore) under Enterprise A — this is a vendor integration, NOT a real factory measurement. OEE discovery must filter to real sites only.
+
+---
+
+## Production InfluxDB Scaling (2026-02-16)
+
+### Current Task Definition
+- **Task Def**: `edgemind-prod-influxdb:3` (2 vCPU, 4GB RAM)
+- **Previous**: `edgemind-prod-influxdb:2` (1 vCPU, 2GB RAM)
+- **Reason**: Conference data volume saturated 1 vCPU — all queries timing out
+
+### ⚠️ CDK OUT OF SYNC (CRITICAL)
+- **CDK code** (`infra/stacks/database_stack.py`) still defines 1 vCPU / 2GB for InfluxDB
+- **Production** is running 2 vCPU / 4GB (set via direct AWS CLI update, bypassing CDK)
+- **MUST update CDK before next `cdk deploy`** or it will revert InfluxDB to 1 vCPU / 2GB
+- Prod InfluxDB token: `42MRSScexNlpYFoZXro7-_ijUsnvC3ee4yJ3j9a2k900R-geIIzvwUVGxItjwHb8kZKhS2K3DyLVIn-XLhlD2g==`
+
 ---
 
 <!-- Add new facts above this line -->

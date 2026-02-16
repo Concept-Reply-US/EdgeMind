@@ -199,4 +199,21 @@ Completed work and issue tracking. For quick reference - full details live in gi
 - **PR**: #86 (merged to dev)
 - **Files**: `config/factory-sites.json` (new), `lib/factory-sites.js` (new), `server.js`, `lib/oee/index.js`, `lib/ai/index.js`
 
+### 2026-02-16 - Fix Enterprise A OEE Discovery + Fallback
+- **Status**: Completed
+- **Description**: Enterprise A OEE showing 48.2% instead of ~96%. OEE discovery found aveva's `_OEE_Availability` instead of Dallas's `OEE_Availability`. Fixed discovery to filter to real sites only. Also fixed fallback tier mismatch — hardcoded `tier: 1` but Enterprise A has no `overall` measurement; changed to `tier = measurements.overall ? 1 : 2`.
+- **PRs**: #89, #91 (merged to main), direct push to main (fallback fix)
+- **Files**: `lib/oee/index.js`
+
+### 2026-02-16 - Add Site Filter to All Flux Queries (InfluxDB Timeout Fix)
+- **Status**: Completed
+- **Description**: Conference MQTT broker flooding data from dozens of vendor sites caused InfluxDB CPU saturation (186% dev, 100% prod). All Flux queries timing out. Added `getFluxSiteFilter()` to all 8 Flux queries across 5 files to limit scan to real factory sites only.
+- **PR**: #92 (merged to main), direct push to main
+- **Files**: `lib/ai/index.js`, `lib/ai/tools.js`, `lib/oee/index.js`, `lib/schema/index.js`, `server.js`
+
+### 2026-02-16 - Scale Prod InfluxDB 1 vCPU → 2 vCPU (Emergency)
+- **Status**: Completed
+- **Description**: Prod InfluxDB completely saturated on 1 vCPU during conference. Registered new task def `edgemind-prod-influxdb:3` (2 vCPU, 4GB RAM) via AWS CLI and forced deployment. CDK is now out of sync — must update `infra/stacks/database_stack.py` before next CDK deploy.
+- **Method**: Direct AWS CLI (`aws ecs register-task-definition` + `aws ecs update-service --force-new-deployment`)
+
 <!-- Add new entries above this line -->
