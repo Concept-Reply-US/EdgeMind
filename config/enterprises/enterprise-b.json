@@ -1,0 +1,93 @@
+{
+  "name": "Enterprise B",
+  "industry": "Beverage Bottling",
+  "domain": "beverage",
+  "equipment": {
+    "Filler": {
+      "type": "bottle-filler",
+      "normalSpeed": [400, 600],
+      "unit": "BPM"
+    },
+    "Labeler": {
+      "type": "labeling-machine",
+      "accuracy": 99.5
+    },
+    "Palletizer": {
+      "type": "palletizing-robot",
+      "cycleTime": [10, 15]
+    },
+    "Washer": {
+      "type": "bottle-washer",
+      "normalOEE": [90, 98]
+    },
+    "CapLoader": {
+      "type": "capping-machine",
+      "normalTorque": [12, 22],
+      "unit": "Nm"
+    },
+    "MixingVat": {
+      "type": "mixing-vessel",
+      "normalTemp": [30, 35],
+      "unit": "°C"
+    }
+  },
+  "criticalMetrics": ["countinfeed", "countoutfeed", "countdefect", "oee"],
+  "concerns": [
+    "line_efficiency",
+    "changeover_time",
+    "reject_rate",
+    "bearing_degradation",
+    "torque_drift",
+    "thermal_drift",
+    "cascade_failure"
+  ],
+  "rawCounterFields": ["countinfeed", "countoutfeed", "countdefect"],
+  "safeRanges": {
+    "reject_rate": {
+      "max": 2,
+      "unit": "%",
+      "warning": 1.5
+    },
+    "filler_speed": {
+      "min": 350,
+      "max": 650,
+      "unit": "BPM"
+    },
+    "vibration": {
+      "max": 3.0,
+      "warning": 2.5,
+      "unit": "mm/s",
+      "critical": true
+    },
+    "vat_temperature": {
+      "min": 30,
+      "max": 35,
+      "warning_min": 31,
+      "warning_max": 34,
+      "unit": "°C"
+    },
+    "capper_torque": {
+      "min": 10,
+      "max": 25,
+      "warning": 22,
+      "unit": "Nm"
+    },
+    "torque_variance": {
+      "max": 5,
+      "warning": 3,
+      "unit": "Nm"
+    },
+    "defect_rate": {
+      "max": 2,
+      "warning": 1.5,
+      "unit": "%",
+      "critical": true
+    }
+  },
+  "wasteMetrics": ["count_defect", "input_countdefect", "workorder_quantitydefect"],
+  "wasteThresholds": {
+    "warning": 50,
+    "critical": 100,
+    "unit": "defects/hr"
+  }
+}
