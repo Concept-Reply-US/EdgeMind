@@ -155,9 +155,12 @@ export function applyInsightFilter(filterType, containerEl, tabSelector, onAnoma
                 </div>
             `;
         } else {
-            filteredAnomalies.forEach(anomaly => {
+            filteredAnomalies.forEach((anomaly, index) => {
                 const el = document.createElement('div');
                 el.className = 'anomaly-item';
+                // Find the original index in state.anomalies for click handler delegation
+                const originalIndex = state.anomalies.indexOf(anomaly);
+                el.setAttribute('data-anomaly-index', originalIndex);
                 const escapedText = escapeHtml(anomaly.text || anomaly.description || 'Anomaly detected');
                 el.innerHTML = `
                     <div>${escapedText}</div>

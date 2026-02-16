@@ -139,12 +139,11 @@ export async function sendQuestion(question) {
     saveQuestion(q);
 
     try {
-        const response = await fetch('/api/agent/ask', {
+        const response = await fetch('/api/agent/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                question: q,
-                context: 'coo-dashboard',
+                prompt: q,
                 sessionId: sessionId
             })
         });
@@ -154,9 +153,40 @@ export async function sendQuestion(question) {
             throw new Error(errData.message || errData.error || `Server returned ${response.status}`);
         }
 
-        const data = await response.json();
-        sessionId = data.sessionId || sessionId;
-        showResponse(data.answer || 'No response received.');
+        // Handle SSE streaming response
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            for (const line of chunk.split('\n')) {
+                if (!line.startsWith('data: ')) continue;
+                const content = line.slice(6).trim();
+                if (content === '[DONE]') continue;
+                try {
+                    const data = JSON.parse(content);
+                    if (data.type === 'tool') {
+                        if (fullText.length > 0 && !fullText.endsWith('\n\n')) fullText += '\n\n';
+                        fullText += `🔧 ${data.name}`;
+                    } else {
+                        const newText = typeof data === 'string' ? data : (data.text || data.content || '');
+                        fullText += newText;
+                    }
+                } catch {
+                    fullText += content;
+                }
+            }
+            // Update response live as chunks arrive
+            showResponse(fullText || 'Analyzing...');
+        }
+
+        // Read session ID from response header
+        sessionId = response.headers.get('X-Session-Id') || sessionId;
+        showResponse(fullText || 'No response received.');
     } catch (error) {
         console.error('COO Agent Q&A error:', error);
         showError(error.message || 'Failed to get response from agent.');
