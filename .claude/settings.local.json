@@ -9,5 +9,9 @@
       "Bash(git pull origin dev)",
       "Bash(git merge feature/Trend_Analysis)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "quint-code"
+  ],
+  "enableAllProjectMcpServers": true
 }
