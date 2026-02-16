@@ -569,52 +569,66 @@ async function fetchAndRender() {
     // Show loading state on all charts
     setAllLoading(true);
 
-    // Fetch all data in parallel - each request is independent
-    const [spcData, downtimeData, productionData, energyData] = await Promise.all([
-        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements'),
-        safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime'),
-        safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production'),
-        safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy')
-    ]);
+    // Launch all fetches immediately (don't await yet - true parallelization)
+    const spcPromise = safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements');
+    const downtimePromise = safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime');
+    const productionPromise = safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production');
+    const energyPromise = safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy');
 
-    // Render SPC independently - don't block other charts
-    if (spcData && spcData.measurements && spcData.measurements.length > 0) {
-        renderSPCDropdown(spcData.measurements);
-        await loadSPCData(spcData.measurements[0].measurement);
-    } else {
-        setLoading('plant-spc-chart', false);
-        showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
-        const select = document.getElementById('plant-spc-measurement-select');
-        if (select) {
-            select.innerHTML = '<option>No SPC measurements available</option>';
+    // Render fast charts as soon as they resolve (don't wait for SPC)
+    Promise.all([downtimePromise, productionPromise, energyPromise]).then(([downtimeData, productionData, energyData]) => {
+        // Downtime chart
+        if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
+            createDowntimeChart(downtimeData);
+        } else {
+            setLoading('plant-downtime-chart', false);
+            showEmptyState('plant-downtime-chart', 'No downtime events recorded');
         }
-        const cpkBadge = document.getElementById('spc-cpk-badge');
-        if (cpkBadge) {
-            cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
-        }
-    }
 
-    // Render other charts independently - each clears its own loading
-    if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
-        createDowntimeChart(downtimeData);
-    } else {
+        // Production chart
+        if (productionData && productionData.byLine && productionData.byLine.length > 0) {
+            createProductionChart(productionData);
+        } else {
+            setLoading('plant-production-chart', false);
+            showEmptyState('plant-production-chart', 'No production count data available');
+        }
+
+        // Energy chart
+        if (energyData && energyData.byLine && energyData.byLine.length > 0) {
+            createEnergyChart(energyData);
+        } else {
+            setLoading('plant-energy-chart', false);
+            showEmptyState('plant-energy-chart', 'No energy consumption data available');
+        }
+    }).catch(error => {
+        console.error('Fast charts error:', error);
         setLoading('plant-downtime-chart', false);
-        showEmptyState('plant-downtime-chart', 'No downtime events recorded');
-    }
-
-    if (productionData && productionData.byLine && productionData.byLine.length > 0) {
-        createProductionChart(productionData);
-    } else {
         setLoading('plant-production-chart', false);
-        showEmptyState('plant-production-chart', 'No production count data available');
-    }
-
-    if (energyData && energyData.byLine && energyData.byLine.length > 0) {
-        createEnergyChart(energyData);
-    } else {
         setLoading('plant-energy-chart', false);
-        showEmptyState('plant-energy-chart', 'No energy consumption data available');
-    }
+    });
+
+    // SPC renders independently when ready (slow endpoint doesn't block others)
+    spcPromise.then(async (spcData) => {
+        if (spcData && spcData.measurements && spcData.measurements.length > 0) {
+            renderSPCDropdown(spcData.measurements);
+            await loadSPCData(spcData.measurements[0].measurement);
+        } else {
+            setLoading('plant-spc-chart', false);
+            showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
+            const select = document.getElementById('plant-spc-measurement-select');
+            if (select) {
+                select.innerHTML = '<option>No SPC measurements available</option>';
+            }
+            const cpkBadge = document.getElementById('spc-cpk-badge');
+            if (cpkBadge) {
+                cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
+            }
+        }
+    }).catch(error => {
+        console.error('SPC error:', error);
+        setLoading('plant-spc-chart', false);
+        showEmptyState('plant-spc-chart', 'Failed to load SPC data');
+    });
 }
 
 /**
