@@ -224,7 +224,7 @@ export function handleServerMessage(message) {
                 });
             }
 
-            // Update anomaly count
+            // Update anomaly count (addClaudeInsight already pushes enriched anomalies to state.anomalies)
             if (message.data.anomalies && message.data.anomalies.length > 0) {
                 state.stats.anomalyCount += message.data.anomalies.length;
                 updateMetrics();

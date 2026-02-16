@@ -2,6 +2,7 @@
 // Active alerts from WebSocket anomalies + CMMS work order integration
 
 import { state } from './state.js';
+import { escapeHtml } from './utils.js';
 
 let refreshInterval = null;
 let currentSeverityFilter = 'all';
@@ -74,14 +75,14 @@ function renderAlerts(filter) {
 
     const cards = sorted.map(alert => {
         const severity = alert.severity || 'info';
-        const description = alert.title || alert.description || alert.message || 'Unknown alert';
-        const time = formatTime(alert.timestamp);
-        const enterprise = alert.enterprise ? `<span class="alert-enterprise">${alert.enterprise}</span>` : '';
+        const description = escapeHtml(alert.title || alert.description || alert.message || 'Unknown alert');
+        const time = escapeHtml(formatTime(alert.timestamp));
+        const enterprise = alert.enterprise ? `<span class="alert-enterprise">${escapeHtml(alert.enterprise)}</span>` : '';
 
         return `
-            <div class="alert-card alert-${severity}">
+            <div class="alert-card alert-${escapeHtml(severity)}">
                 <div class="alert-card-header">
-                    <span class="severity-badge severity-${severity}">${severity.toUpperCase()}</span>
+                    <span class="severity-badge severity-${escapeHtml(severity)}">${escapeHtml(severity.toUpperCase())}</span>
                     <span class="alert-time">${time}</span>
                 </div>
                 <div class="alert-description">${description}</div>
@@ -137,17 +138,20 @@ async function renderWorkOrders() {
 
         const cards = workOrders.map(wo => {
             const statusClass = getStatusClass(wo.status);
-            const priorityLabel = wo.priority || 'Normal';
+            const priorityLabel = escapeHtml(wo.priority || 'Normal');
+            const title = escapeHtml(wo.title || wo.description || 'Untitled');
+            const status = escapeHtml(wo.status || 'Unknown');
+            const assignee = wo.assignee ? `<span class="wo-assignee">Assigned: ${escapeHtml(wo.assignee)}</span>` : '';
 
             return `
                 <div class="work-order-card">
                     <div class="work-order-header">
-                        <span class="work-order-title">${wo.title || wo.description || 'Untitled'}</span>
-                        <span class="wo-status-badge wo-status-${statusClass}">${wo.status || 'Unknown'}</span>
+                        <span class="work-order-title">${title}</span>
+                        <span class="wo-status-badge wo-status-${statusClass}">${status}</span>
                     </div>
                     <div class="work-order-meta">
                         <span class="wo-priority">Priority: ${priorityLabel}</span>
-                        ${wo.assignee ? `<span class="wo-assignee">Assigned: ${wo.assignee}</span>` : ''}
+                        ${assignee}
                     </div>
                 </div>
             `;
@@ -156,7 +160,7 @@ async function renderWorkOrders() {
         listEl.innerHTML = cards.join('');
     } catch (error) {
         console.error('Work orders fetch error:', error);
-        listEl.innerHTML = `<div class="view-loading" style="color: var(--accent-red);">Failed to load work orders: ${error.message}</div>`;
+        listEl.innerHTML = `<div class="view-loading" style="color: var(--accent-red);">Failed to load work orders: ${escapeHtml(error.message)}</div>`;
     }
 }
 

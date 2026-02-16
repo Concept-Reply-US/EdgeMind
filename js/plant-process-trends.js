@@ -9,6 +9,7 @@ let spcChart = null;
 let downtimeChart = null;
 let productionChart = null;
 let energyChart = null;
+let listenersAttached = false;
 
 const CHART_COLORS = {
     cyan: '#00ffff',
@@ -127,11 +128,6 @@ function renderSPCDropdown(measurements) {
             ${m.displayName} - Cpk: ${m.statistics.cpk.toFixed(2)} (${m.reason})
         </option>
     `).join('');
-
-    select.addEventListener('change', (e) => {
-        const selectedMeasurement = e.target.value;
-        loadSPCData(selectedMeasurement);
-    });
 }
 
 /**
@@ -175,6 +171,13 @@ function createSPCChart(data) {
 
     // Find overall time range for control limit lines
     const allTimestamps = series.flatMap(s => s.data.map(d => new Date(d.timestamp)));
+
+    // Guard against empty timestamps to prevent Chart.js crash
+    if (allTimestamps.length === 0) {
+        showEmptyState('plant-spc-chart', 'No data points for selected measurement');
+        return;
+    }
+
     const minTime = new Date(Math.min(...allTimestamps));
     const maxTime = new Date(Math.max(...allTimestamps));
     const limitPoints = [{ x: minTime, y: 0 }, { x: maxTime, y: 0 }];
@@ -622,52 +625,74 @@ async function fetchAndRender() {
     // Show loading state on all charts
     setAllLoading(true);
 
-    // Fetch all data in parallel - each request is independent
-    const [spcData, downtimeData, productionData, energyData] = await Promise.all([
-        safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements'),
-        safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime'),
-        safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production'),
-        safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy')
-    ]);
+    // Launch all fetches immediately (don't await yet - true parallelization)
+    const spcPromise = safeFetch(`/api/spc/measurements?enterprise=${encodeURIComponent(enterprise)}&limit=10${siteParam}`, 'SPC measurements');
+    const downtimePromise = safeFetch(`/api/trends/downtime-pareto?window=daily&enterprise=${encodeURIComponent(enterprise)}`, 'Downtime');
+    const productionPromise = safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production');
+    const energyPromise = safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy');
 
-    // Render SPC independently - don't block other charts
-    if (spcData && spcData.measurements && spcData.measurements.length > 0) {
-        renderSPCDropdown(spcData.measurements);
-        await loadSPCData(spcData.measurements[0].measurement);
-    } else {
-        setLoading('plant-spc-chart', false);
-        showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
-        const select = document.getElementById('plant-spc-measurement-select');
-        if (select) {
-            select.innerHTML = '<option>No SPC measurements available</option>';
+    // Render each chart independently as soon as its data arrives (don't wait for SPC or each other)
+    downtimePromise.then(downtimeData => {
+        if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
+            createDowntimeChart(downtimeData);
+        } else {
+            setLoading('plant-downtime-chart', false);
+            showEmptyState('plant-downtime-chart', 'No downtime events recorded');
         }
-        const cpkBadge = document.getElementById('spc-cpk-badge');
-        if (cpkBadge) {
-            cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
-        }
-    }
-
-    // Render other charts independently - each clears its own loading
-    if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
-        createDowntimeChart(downtimeData);
-    } else {
+    }).catch(error => {
+        console.error('Downtime chart error:', error);
         setLoading('plant-downtime-chart', false);
-        showEmptyState('plant-downtime-chart', 'No downtime events recorded');
-    }
+        showEmptyState('plant-downtime-chart', 'Failed to load downtime data');
+    });
 
-    if (productionData && productionData.byLine && productionData.byLine.length > 0) {
-        createProductionChart(productionData);
-    } else {
+    productionPromise.then(productionData => {
+        if (productionData && productionData.byLine && productionData.byLine.length > 0) {
+            createProductionChart(productionData);
+        } else {
+            setLoading('plant-production-chart', false);
+            showEmptyState('plant-production-chart', 'No production count data available');
+        }
+    }).catch(error => {
+        console.error('Production chart error:', error);
         setLoading('plant-production-chart', false);
-        showEmptyState('plant-production-chart', 'No production count data available');
-    }
+        showEmptyState('plant-production-chart', 'Failed to load production data');
+    });
 
-    if (energyData && energyData.byLine && energyData.byLine.length > 0) {
-        createEnergyChart(energyData);
-    } else {
+    energyPromise.then(energyData => {
+        if (energyData && energyData.byLine && energyData.byLine.length > 0) {
+            createEnergyChart(energyData);
+        } else {
+            setLoading('plant-energy-chart', false);
+            showEmptyState('plant-energy-chart', 'No energy consumption data available');
+        }
+    }).catch(error => {
+        console.error('Energy chart error:', error);
         setLoading('plant-energy-chart', false);
-        showEmptyState('plant-energy-chart', 'No energy consumption data available');
-    }
+        showEmptyState('plant-energy-chart', 'Failed to load energy data');
+    });
+
+    // SPC renders independently when ready (slow endpoint doesn't block others)
+    spcPromise.then(async (spcData) => {
+        if (spcData && spcData.measurements && spcData.measurements.length > 0) {
+            renderSPCDropdown(spcData.measurements);
+            await loadSPCData(spcData.measurements[0].measurement);
+        } else {
+            setLoading('plant-spc-chart', false);
+            showEmptyState('plant-spc-chart', 'No SPC measurements available for this enterprise');
+            const select = document.getElementById('plant-spc-measurement-select');
+            if (select) {
+                select.innerHTML = '<option>No SPC measurements available</option>';
+            }
+            const cpkBadge = document.getElementById('spc-cpk-badge');
+            if (cpkBadge) {
+                cpkBadge.innerHTML = '<span class="cpk-label">No SPC data available for this enterprise</span>';
+            }
+        }
+    }).catch(error => {
+        console.error('SPC error:', error);
+        setLoading('plant-spc-chart', false);
+        showEmptyState('plant-spc-chart', 'Failed to load SPC data');
+    });
 }
 
 /**
@@ -676,19 +701,29 @@ async function fetchAndRender() {
 export async function init() {
     // Wire up enterprise dropdown
     const enterpriseDropdown = document.getElementById('plant-process-enterprise');
-    if (enterpriseDropdown) {
+    if (enterpriseDropdown && !listenersAttached) {
         const enterprise = getEnterpriseParam(state);
         enterpriseDropdown.value = enterprise;
         enterpriseDropdown.addEventListener('change', async () => {
             await fetchSitesForEnterprise(enterpriseDropdown.value);
-            fetchAndRender();
+            await fetchAndRender();
         });
     }
 
     // Wire up site dropdown
     const siteDropdown = document.getElementById('plant-process-site');
-    if (siteDropdown) {
-        siteDropdown.addEventListener('change', () => fetchAndRender());
+    if (siteDropdown && !listenersAttached) {
+        siteDropdown.addEventListener('change', async () => await fetchAndRender());
+    }
+
+    // Wire up SPC measurement dropdown (once, to avoid listener leak)
+    const spcSelect = document.getElementById('plant-spc-measurement-select');
+    if (spcSelect && !listenersAttached) {
+        spcSelect.addEventListener('change', (e) => loadSPCData(e.target.value));
+    }
+
+    if (!listenersAttached) {
+        listenersAttached = true;
     }
 
     // Fetch initial sites then render

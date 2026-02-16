@@ -61,15 +61,17 @@ export function openAnomalyModal(anomaly) {
     const severityUpper = severity.toUpperCase();
     severityEl.innerHTML = '<span class="anomaly-modal-severity ' + escapeHtml(severity) + '">' + escapeHtml(severityUpper) + '</span>';
 
-    const date = new Date(anomaly.timestamp);
-    const formattedDate = date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
+    const date = anomaly.timestamp ? new Date(anomaly.timestamp) : null;
+    const formattedDate = date && !isNaN(date.getTime())
+        ? date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        })
+        : 'Just now';
     timestampEl.textContent = formattedDate;
 
     overlay.classList.add('active');
@@ -320,11 +322,11 @@ export function expandCard(cardElement, title) {
         }
     });
 
-    // Observe original card and sync changes to clone (debounced)
+    // Observe original card and sync changes to clone (debounced to 200ms to reduce clone frequency)
     if (cardSyncObserver) cardSyncObserver.disconnect();
     cardSyncObserver = new MutationObserver(() => {
         clearTimeout(cardSyncTimeout);
-        cardSyncTimeout = setTimeout(syncToModal, 50);
+        cardSyncTimeout = setTimeout(syncToModal, 200);
     });
     cardSyncObserver.observe(cardElement, { childList: true, subtree: true, characterData: true, attributes: true });
 
