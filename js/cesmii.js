@@ -188,7 +188,7 @@ export function handleRealtimeWorkOrder(data) {
     // Add to state
     if (!state.cesmiiWorkOrders) state.cesmiiWorkOrders = [];
     state.cesmiiWorkOrders.push(data);
-    if (state.cesmiiWorkOrders.length > 100) {
+    if (state.cesmiiWorkOrders.length > 50) {
         state.cesmiiWorkOrders.shift();
     }
 
