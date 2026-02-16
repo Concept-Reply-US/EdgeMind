@@ -1,0 +1,9 @@
+{
+  "description": "Real factory sites allowlist. Only data from these sites is tracked for equipment states, OEE, and line status. Vendor integration endpoints (prosys, opto22, maintainx, etc.) are excluded.",
+  "sites": {
+    "Enterprise A": ["Dallas Line 1", "Dallas"],
+    "Enterprise B": ["Site1", "Site2", "Site3"],
+    "Enterprise C": []
+  },
+  "allSites": ["Dallas Line 1", "Dallas", "Site1", "Site2", "Site3"]
+}

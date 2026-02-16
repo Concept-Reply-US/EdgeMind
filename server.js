@@ -40,6 +40,7 @@ const {
   ENTERPRISE_DOMAIN_CONTEXT,
   getEnterpriseContext
 } = require('./lib/domain-context');
+const { isRealSite, getFluxSiteFilter } = require('./lib/factory-sites');
 const { refreshSchemaCache, refreshHierarchyCache, classifyMeasurementDetailed } = require('./lib/schema');
 const {
   OEE_TIERS,
@@ -414,6 +415,12 @@ mqttClient.on('message', async (topic, message) => {
     if (parts.length >= 3) {
       const enterprise = parts[0];
       const site = parts[1];
+
+      // Skip vendor integration sites (not real factory sites)
+      if (!isRealSite(site)) {
+        // Continue with InfluxDB write, but skip equipment state caching
+        return;
+      }
 
       // Extract machine name - try multiple strategies
       let machine = parts.length >= 4 ? parts[3] : parts[2];
@@ -1050,6 +1057,11 @@ app.get('/api/equipment/states', async (req, res) => {
 
     // Convert Map to array with calculated durations
     for (const stateData of equipmentStateCache.states.values()) {
+      // Skip vendor integration sites (not real factory sites)
+      if (!isRealSite(stateData.site)) {
+        continue;
+      }
+
       // Filter by enterprise if specified
       if (enterprise && enterprise !== 'ALL' && stateData.enterprise !== enterprise) {
         continue;
@@ -1150,6 +1162,7 @@ app.get('/api/oee/lines', async (req, res) => {
         )
         |> filter(fn: (r) => r._value > 0 and r._value <= 150)
         ${enterpriseFilter}
+        ${getFluxSiteFilter()}
         |> group(columns: ["enterprise", "site", "area", "_measurement"])
         |> mean()
         |> group(columns: ["enterprise", "site", "area"])
@@ -1868,6 +1881,11 @@ app.get('/api/agent/context', async (req, res) => {
     const states = [];
     const now = Date.now();
     for (const stateData of equipmentStateCache.states.values()) {
+      // Skip vendor integration sites (not real factory sites)
+      if (!isRealSite(stateData.site)) {
+        continue;
+      }
+
       states.push({
         ...stateData,
         durationMs: now - new Date(stateData.firstSeen).getTime(),
