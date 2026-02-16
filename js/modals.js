@@ -322,11 +322,11 @@ export function expandCard(cardElement, title) {
         }
     });
 
-    // Observe original card and sync changes to clone (debounced)
+    // Observe original card and sync changes to clone (debounced to 200ms to reduce clone frequency)
     if (cardSyncObserver) cardSyncObserver.disconnect();
     cardSyncObserver = new MutationObserver(() => {
         clearTimeout(cardSyncTimeout);
-        cardSyncTimeout = setTimeout(syncToModal, 50);
+        cardSyncTimeout = setTimeout(syncToModal, 200);
     });
     cardSyncObserver.observe(cardElement, { childList: true, subtree: true, characterData: true, attributes: true });
 

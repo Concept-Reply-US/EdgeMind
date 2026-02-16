@@ -2088,6 +2088,36 @@ if (CONFIG.cesmii.enabled) {
 }
 
 // =============================================================================
+// VECTOR STORE ADMIN ENDPOINTS
+// =============================================================================
+
+/**
+ * @swagger
+ * /api/vector/purge:
+ *   post:
+ *     operationId: purgeVectorStore
+ *     summary: Purge all anomalies from vector store
+ *     description: Manually purge all stored anomalies from ChromaDB (full reset)
+ *     tags: [admin]
+ *     responses:
+ *       200:
+ *         description: Purge completed successfully
+ *       500:
+ *         description: Purge failed
+ */
+app.post('/api/vector/purge', async (req, res) => {
+  try {
+    if (!vectorStore.isReady()) {
+      return res.json({ success: false, message: 'Vector store not initialized' });
+    }
+    const purged = await vectorStore.purgeAll();
+    res.json({ success: true, purged, message: `Purged ${purged} anomalies` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// =============================================================================
 // STUB ENDPOINTS FOR LAMBDA TOOL COMPATIBILITY
 // =============================================================================
 

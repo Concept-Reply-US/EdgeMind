@@ -477,6 +477,7 @@ export function selectFactory(factory) {
 
     state.messages = [];
     state.enterpriseCounts = { 'Enterprise A': 0, 'Enterprise B': 0, 'Enterprise C': 0 };
+    state.uniqueTopics.clear();
 
     if (window.healthChart) {
         window.healthChart.data.datasets[0].data = [0, 0, 0];

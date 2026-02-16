@@ -89,6 +89,10 @@ export async function sendChatMessage(sourceInput = null) {
     // Add user message
     if (messages) {
         messages.innerHTML += `<div class="chat-message user">${USER_ICON}<div class="bubble">${escapeHtml(prompt)}</div></div>`;
+        // Cap DOM nodes to prevent memory leak
+        while (messages.children.length > 50) {
+            messages.removeChild(messages.firstChild);
+        }
     }
     
     // Clear all inputs and disable all send buttons
@@ -107,6 +111,9 @@ export async function sendChatMessage(sourceInput = null) {
     }
     
     chatHistory.push({ role: 'user', content: prompt });
+    if (chatHistory.length > 20) {
+        chatHistory.splice(0, chatHistory.length - 20);
+    }
     currentStreamText = '';
     isStreaming = true;
     
@@ -159,8 +166,20 @@ export async function sendChatMessage(sourceInput = null) {
         
         isStreaming = false;
         chatHistory.push({ role: 'assistant', content: currentStreamText });
+        if (chatHistory.length > 20) {
+            chatHistory.splice(0, chatHistory.length - 20);
+        }
         document.querySelectorAll('.chat-send').forEach(el => el.disabled = false);
-        if (assistantBubble) assistantBubble.closest('.chat-message')?.classList.remove('streaming');
+        if (assistantBubble) {
+            assistantBubble.closest('.chat-message')?.classList.remove('streaming');
+            // Cap DOM nodes after assistant message completes
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer) {
+                while (messagesContainer.children.length > 50) {
+                    messagesContainer.removeChild(messagesContainer.firstChild);
+                }
+            }
+        }
     } catch (err) {
         isStreaming = false;
         document.querySelectorAll('.chat-send').forEach(el => el.disabled = false);
