@@ -72,6 +72,7 @@ import { init as initEquipmentHealth, cleanup as cleanupEquipmentHealth, filterE
 import { init as initAlerts, cleanup as cleanupAlerts, filterAlerts } from './plant-alerts.js';
 import { init as initPlantProcessTrends, cleanup as cleanupPlantProcessTrends } from './plant-process-trends.js';
 import { init as initCesmii, cleanup as cleanupCesmii } from './cesmii.js';
+import { showNotification } from './notifications.js';
 
 // Expose all functions that are called from HTML onclick handlers to window
 window.switchPersona = switchPersona;
@@ -109,6 +110,7 @@ window.setTimerCustom = setTimerCustom;
 window.startTimer = startTimer;
 window.pauseTimer = pauseTimer;
 window.resetTimer = resetTimer;
+window.showNotification = showNotification;
 
 // Initialize persona system on DOM ready
 document.addEventListener('DOMContentLoaded', () => {

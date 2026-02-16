@@ -73,8 +73,8 @@ class DatabaseStack(Stack):
         task_definition = ecs.FargateTaskDefinition(
             self, "InfluxDBTaskDef",
             family=f"{name_prefix}-influxdb",
-            cpu=512,  # 0.5 vCPU
-            memory_limit_mib=1024,  # 1 GB
+            cpu=1024,  # 1 vCPU
+            memory_limit_mib=2048,  # 2 GB - InfluxDB needs headroom for shard compaction
             runtime_platform=ecs.RuntimePlatform(
                 cpu_architecture=ecs.CpuArchitecture.X86_64,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX
@@ -168,14 +168,14 @@ class DatabaseStack(Stack):
             description="Service discovery namespace for EdgeMind services"
         )
 
-        # ECS Fargate Service (using Spot for cost savings - ~70% cheaper)
+        # ECS Fargate Service (on-demand for database availability)
         self.service = ecs.FargateService(
             self, "InfluxDBService",
             cluster=ecs_cluster,
             task_definition=task_definition,
             service_name=f"{name_prefix}-influxdb",
             desired_count=1,
-            min_healthy_percent=0,  # Allow service to scale down during Spot interruptions
+            min_healthy_percent=0,  # Stop old task first - InfluxDB file locks prevent concurrent instances on EFS
             max_healthy_percent=200,  # Allow new task to start before stopping old
             security_groups=[influxdb_security_group],
             vpc_subnets=ec2.SubnetSelection(
@@ -194,13 +194,9 @@ class DatabaseStack(Stack):
             enable_execute_command=True,  # For debugging
             capacity_provider_strategies=[
                 ecs.CapacityProviderStrategy(
-                    capacity_provider="FARGATE_SPOT",
-                    weight=1,  # Prefer Spot
-                ),
-                ecs.CapacityProviderStrategy(
                     capacity_provider="FARGATE",
-                    weight=0,  # Fallback to on-demand if no Spot available
-                    base=0,
+                    weight=1,
+                    base=1,  # Always have at least 1 on-demand task
                 ),
             ],
         )

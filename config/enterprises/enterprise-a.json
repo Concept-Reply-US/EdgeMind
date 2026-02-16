@@ -1,0 +1,48 @@
+{
+  "name": "Enterprise A",
+  "industry": "Glass Manufacturing",
+  "domain": "glass",
+  "equipment": {
+    "Furnace": {
+      "type": "glass-furnace",
+      "normalTemp": [2650, 2750],
+      "unit": "°F"
+    },
+    "ISMachine": {
+      "type": "forming-machine",
+      "cycleTime": [8, 12],
+      "unit": "sec"
+    },
+    "Lehr": {
+      "type": "annealing-oven",
+      "tempGradient": [1050, 400]
+    }
+  },
+  "criticalMetrics": ["temperature", "gob_weight", "defect_count"],
+  "concerns": ["thermal_shock", "crown_temperature", "refractory_wear"],
+  "safeRanges": {
+    "furnace_temp": {
+      "min": 2600,
+      "max": 2800,
+      "unit": "°F",
+      "critical": true
+    },
+    "crown_temp": {
+      "min": 2400,
+      "max": 2600,
+      "unit": "°F"
+    }
+  },
+  "wasteMetrics": [
+    "OEE_Waste",
+    "Production_DefectCHK",
+    "Production_DefectDIM",
+    "Production_DefectSED",
+    "Production_RejectCount"
+  ],
+  "wasteThresholds": {
+    "warning": 10,
+    "critical": 25,
+    "unit": "defects/hr"
+  }
+}

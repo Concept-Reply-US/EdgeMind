@@ -17,6 +17,7 @@ COPY index.html ./
 COPY css/ ./css/
 COPY js/ ./js/
 COPY lib/ ./lib/
+COPY config/ ./config/
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
