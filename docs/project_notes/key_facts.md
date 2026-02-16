@@ -492,4 +492,21 @@ lib/cesmii/
 
 ---
 
+## Factory Site Allowlist (ADR-020)
+
+### Configuration File
+- **`config/factory-sites.json`** — Real factory sites allowlist (JSON). Enterprise A: Dallas, Dallas Line 1. Enterprise B: Site1, Site2, Site3. Edit this file to add/remove tracked sites. New sites must be added here or they will be filtered from OEE, equipment states, and agent context.
+
+### Helper Module
+- **`lib/factory-sites.js`** — Module providing:
+  - `isRealSite(enterprise, site)` — Returns boolean, checks if site is in the allowlist
+  - `getRealSites(enterprise)` — Returns array of real site names for an enterprise
+  - `getFluxSiteFilter(enterprise)` — Returns Flux query filter string for InfluxDB queries
+
+### OEE v2 Tier Usage
+- **Enterprise A**: Uses Tier 2 (pre-computed A x P x Q components — `OEE_Availability`, `OEE_Performance`, `OEE_Quality`)
+- **Enterprise B**: Uses Tier 1 (pre-computed overall — `metric_oee`)
+
+---
+
 <!-- Add new facts above this line -->
