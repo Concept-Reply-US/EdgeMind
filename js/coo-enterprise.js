@@ -45,8 +45,12 @@ function render(oeeBreakdown, factoryStatus, equipmentData) {
 
     const enterprises = ['Enterprise A', 'Enterprise B', 'Enterprise C'];
     const oeeData = oeeBreakdown?.data || {};
-    const statusEnterprises = factoryStatus?.enterprises || {};
+    const statusList = factoryStatus?.enterprises || [];
     const equipmentStates = equipmentData?.states || [];
+
+    // Convert enterprises array to lookup object
+    const statusMap = {};
+    statusList.forEach(e => { statusMap[e.name] = e; });
 
     const columns = enterprises.map(name => {
         const oee = oeeData[name]?.oee ?? null;
@@ -55,9 +59,9 @@ function render(oeeBreakdown, factoryStatus, equipmentData) {
         const equipCounts = countEquipmentStates(equipmentStates, name);
 
         // Get sites from factory status
-        const enterpriseStatus = statusEnterprises[name] || {};
-        const sites = enterpriseStatus.sites || {};
-        const siteEntries = Object.entries(sites);
+        const enterpriseStatus = statusMap[name] || {};
+        const sitesArray = enterpriseStatus.sites || [];
+        const siteEntries = sitesArray.map(s => [s.name, s]);
 
         const siteRows = siteEntries.length > 0
             ? siteEntries.map(([siteName, siteData]) => {

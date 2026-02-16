@@ -4,9 +4,11 @@
  * Escape HTML to prevent XSS attacks
  */
 export function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML
+    if (typeof text !== 'string') text = String(text);
+    return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
