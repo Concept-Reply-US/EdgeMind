@@ -126,7 +126,7 @@ js/                  # ES modules (22 files)
 ├── chat.js          # Chat panel functionality
 ├── coo-enterprise.js # COO: Enterprise comparison view
 ├── coo-trends.js    # COO: Trend analysis with Chart.js charts
-├── coo-agent.js     # COO: Agent Q&A with POST /api/agent/ask
+├── coo-agent.js     # COO: Agent Q&A with POST /api/agent/chat
 ├── plant-line-status.js    # Plant Mgr: Line status grid
 ├── plant-oee-drilldown.js  # Plant Mgr: OEE gauge + charts
 ├── plant-equipment.js      # Plant Mgr: Filterable equipment grid
@@ -219,7 +219,7 @@ curl http://localhost:3000/api/schema/measurements
 
 ### Agent (Bedrock AgentCore)
 
-- `POST /api/agent/ask` - Send question to orchestrator agent
+- `POST /api/agent/chat` - Send question to chat agent (SSE streaming response)
 - `GET /api/agent/context` - Get comprehensive factory context for agentic workflows
 - `GET /api/agent/token-usage` - Get token usage tracking (inputTokens, outputTokens, callCount, dailyReset)
 

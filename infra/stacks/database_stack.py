@@ -73,8 +73,8 @@ class DatabaseStack(Stack):
         task_definition = ecs.FargateTaskDefinition(
             self, "InfluxDBTaskDef",
             family=f"{name_prefix}-influxdb",
-            cpu=512,  # 0.5 vCPU
-            memory_limit_mib=1024,  # 1 GB
+            cpu=1024,  # 1 vCPU
+            memory_limit_mib=2048,  # 2 GB - InfluxDB needs headroom for shard compaction
             runtime_platform=ecs.RuntimePlatform(
                 cpu_architecture=ecs.CpuArchitecture.X86_64,
                 operating_system_family=ecs.OperatingSystemFamily.LINUX
@@ -175,7 +175,7 @@ class DatabaseStack(Stack):
             task_definition=task_definition,
             service_name=f"{name_prefix}-influxdb",
             desired_count=1,
-            min_healthy_percent=100,  # Start replacement before killing existing task
+            min_healthy_percent=0,  # Stop old task first - InfluxDB file locks prevent concurrent instances on EFS
             max_healthy_percent=200,  # Allow new task to start before stopping old
             security_groups=[influxdb_security_group],
             vpc_subnets=ec2.SubnetSelection(
