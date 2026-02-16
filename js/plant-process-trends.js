@@ -9,6 +9,7 @@ let spcChart = null;
 let downtimeChart = null;
 let productionChart = null;
 let energyChart = null;
+let listenersAttached = false;
 
 const CHART_COLORS = {
     cyan: '#00ffff',
@@ -700,7 +701,7 @@ async function fetchAndRender() {
 export async function init() {
     // Wire up enterprise dropdown
     const enterpriseDropdown = document.getElementById('plant-process-enterprise');
-    if (enterpriseDropdown) {
+    if (enterpriseDropdown && !listenersAttached) {
         const enterprise = getEnterpriseParam(state);
         enterpriseDropdown.value = enterprise;
         enterpriseDropdown.addEventListener('change', async () => {
@@ -711,14 +712,18 @@ export async function init() {
 
     // Wire up site dropdown
     const siteDropdown = document.getElementById('plant-process-site');
-    if (siteDropdown) {
+    if (siteDropdown && !listenersAttached) {
         siteDropdown.addEventListener('change', async () => await fetchAndRender());
     }
 
     // Wire up SPC measurement dropdown (once, to avoid listener leak)
     const spcSelect = document.getElementById('plant-spc-measurement-select');
-    if (spcSelect) {
+    if (spcSelect && !listenersAttached) {
         spcSelect.addEventListener('change', (e) => loadSPCData(e.target.value));
+    }
+
+    if (!listenersAttached) {
+        listenersAttached = true;
     }
 
     // Fetch initial sites then render
