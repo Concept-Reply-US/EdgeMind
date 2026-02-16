@@ -395,4 +395,24 @@ This file tracks bugs encountered and their solutions for future reference.
 - **Solution**: Two-sided fix: (1) Backend (`lib/ai/index.js`) now adds `text: anomaly.description || 'Anomaly detected'` when storing anomalies. (2) Frontend (`js/insights.js`) uses fallback chain `anomaly.text || anomaly.description || 'Anomaly detected'` in renderer.
 - **Prevention**: When two code paths produce the same data type, ensure they normalize to the same field names. The `initial_state` path and real-time WebSocket path must produce identical object shapes.
 
+### 2026-02-15 - OEE Discovery Silent Failure Bug
+- **Issue**: `discoverOEESchema()` in `lib/oee/index.js` silently swallowed `refreshSchemaCache()` failures, causing the OEE pipeline to permanently return null data when InfluxDB schema queries timed out or failed.
+- **Root Cause**: Multiple resilience gaps:
+  1. Error handling caught `refreshSchemaCache()` failures with only a debug log, then proceeded to set `oeeConfig.enterprises = {}` (empty object)
+  2. Once empty, subsequent calls retried discovery on every request because `Object.keys(oeeConfig.enterprises).length === 0`
+  3. `queryOEEBreakdown()` called `calculateOEEv2()` for multiple enterprises in `Promise.all`, causing concurrent calls to `discoverOEESchema()` with no concurrency guard — race condition
+  4. `/api/factory/status` worked fine because it bypassed the discovery pipeline with hardcoded Flux queries
+- **Solution**: Four-layer resilience improvement:
+  1. **Concurrency guard**: Uses a promise-based lock (`discoveryState.inProgress`) so concurrent calls await the first operation instead of racing
+  2. **Better error handling**: When `refreshSchemaCache()` fails, keeps existing config intact instead of clearing it. Only updates config on successful discovery with data
+  3. **TTL-based retry with backoff**: Implements 30-second cooldown after failures (`discoveryState.cooldownMs`) to avoid hammering InfluxDB
+  4. **Fallback to hardcoded measurements**: After 3 consecutive failures (`discoveryState.maxFailures`), falls back to known measurement names from `/api/factory/status` patterns (`metric_oee`, `OEE_Performance`, etc.) via `FALLBACK_MEASUREMENTS` and `applyFallbackConfig()`
+- **Prevention**:
+  - Always validate that error handlers don't silently swallow critical failures in data pipeline code
+  - Use concurrency guards for expensive operations that may be called from multiple places simultaneously
+  - Implement retry backoff and fallback strategies for external dependencies (databases, APIs)
+  - When discovery/initialization fails, preserve existing state rather than resetting to empty
+  - Test coverage: All 407 existing tests pass after changes
+- **Changed Files**: `lib/oee/index.js`
+
 <!-- Add new bugs above this line -->

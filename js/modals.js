@@ -292,6 +292,23 @@ export function expandCard(cardElement, title) {
     modalTitle.textContent = title;
     modalContent.innerHTML = '';
     modalContent.appendChild(currentModalClone);
+
+    // Add event delegation for anomaly clicks in maximized modal
+    // This survives innerHTML replacement and cloneNode(true)
+    if (!modalContent.hasAttribute('data-anomaly-handler-attached')) {
+        modalContent.addEventListener('click', (e) => {
+            const anomalyItem = e.target.closest('.anomaly-item');
+            if (anomalyItem) {
+                const anomalyIndex = parseInt(anomalyItem.getAttribute('data-anomaly-index'), 10);
+                if (!isNaN(anomalyIndex) && anomalyIndex >= 0 && anomalyIndex < state.anomalies.length) {
+                    const anomaly = state.anomalies[anomalyIndex];
+                    closeCardModal();
+                    openAnomalyModal(anomaly);
+                }
+            }
+        });
+        modalContent.setAttribute('data-anomaly-handler-attached', 'true');
+    }
     
     // Initial scroll: match original's scroll state
     cardElement.querySelectorAll('*').forEach((el, i) => {
