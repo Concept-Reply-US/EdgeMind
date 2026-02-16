@@ -311,8 +311,8 @@ mqttClient.on('message', async (topic, message) => {
         }
       }
 
-      // Broadcast to WebSocket clients (throttled - every 10th message)
-      if (factoryState.stats.messageCount % 10 === 0 && metrics.length > 0) {
+      // Broadcast to WebSocket clients (throttled - every 50th message)
+      if (factoryState.stats.messageCount % 50 === 0 && metrics.length > 0) {
         // Format Sparkplug message for frontend display
         const displayMetrics = metrics.slice(0, 5).map(m =>
           `${m.name}=${m.value} (${m.valueType})`
@@ -521,8 +521,8 @@ mqttClient.on('message', async (topic, message) => {
     factoryState.messages.shift();
   }
 
-  // Broadcast to WebSocket clients (throttled - every 10th message)
-  if (factoryState.stats.messageCount % 10 === 0) {
+  // Broadcast to WebSocket clients (throttled - every 50th message)
+  if (factoryState.stats.messageCount % 50 === 0) {
     broadcastToClients({
       type: 'mqtt_message',
       data: mqttMessage
