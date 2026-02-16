@@ -37,11 +37,48 @@ const DARK_THEME = {
     backgroundColor: 'transparent'
 };
 
+// Cache for legend states (which datasets are hidden) to preserve user selections across refreshes
+const legendStateCache = new Map();
+
 /**
- * Destroy a chart instance safely
+ * Save legend state before destroying chart
  */
-function destroyChart(chart) {
+function saveLegendState(chart, canvasId) {
+    if (!chart || !chart.data || !chart.data.datasets) return;
+    const hiddenStates = chart.data.datasets.map((_, index) => {
+        const meta = chart.getDatasetMeta(index);
+        return meta ? meta.hidden : false;
+    });
+    legendStateCache.set(canvasId, hiddenStates);
+}
+
+/**
+ * Restore legend state after creating chart
+ */
+function restoreLegendState(chart, canvasId) {
+    if (!chart || !legendStateCache.has(canvasId)) return;
+    const hiddenStates = legendStateCache.get(canvasId);
+    if (!hiddenStates) return;
+
+    hiddenStates.forEach((isHidden, index) => {
+        if (index < chart.data.datasets.length) {
+            const meta = chart.getDatasetMeta(index);
+            if (meta) {
+                meta.hidden = isHidden;
+            }
+        }
+    });
+    chart.update('none'); // Update without animation
+}
+
+/**
+ * Destroy a chart instance safely, saving legend state first
+ */
+function destroyChart(chart, canvasId) {
     if (chart && typeof chart.destroy === 'function') {
+        if (canvasId) {
+            saveLegendState(chart, canvasId);
+        }
         chart.destroy();
     }
     return null;
@@ -93,8 +130,8 @@ function setAllLoading(loading) {
  * Create OEE by Enterprise bar chart with equipment state distribution
  */
 function createOEEChart(data, equipData) {
-    oeeChart = destroyChart(oeeChart);
     const canvasId = 'coo-oee-chart';
+    oeeChart = destroyChart(oeeChart, canvasId);
     setLoading(canvasId, false);
 
     const canvas = document.getElementById(canvasId);
@@ -252,14 +289,17 @@ function createOEEChart(data, equipData) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(oeeChart, canvasId);
 }
 
 /**
  * Create Waste trends bar chart
  */
 function createWasteChart(data) {
-    wasteChart = destroyChart(wasteChart);
     const canvasId = 'coo-waste-chart';
+    wasteChart = destroyChart(wasteChart, canvasId);
     setLoading(canvasId, false);
 
     const canvas = document.getElementById(canvasId);
@@ -325,14 +365,17 @@ function createWasteChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(wasteChart, canvasId);
 }
 
 /**
  * Create downtime Pareto horizontal bar chart
  */
 function createDowntimeParetoChart(data) {
-    downtimeParetoChart = destroyChart(downtimeParetoChart);
     const canvasId = 'coo-downtime-pareto-chart';
+    downtimeParetoChart = destroyChart(downtimeParetoChart, canvasId);
     setLoading(canvasId, false);
 
     const canvas = document.getElementById(canvasId);
@@ -405,6 +448,9 @@ function createDowntimeParetoChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(downtimeParetoChart, canvasId);
 }
 
 /**
@@ -420,8 +466,8 @@ function hasTimeSeriesData(byEnterprise) {
  * Create waste predictive line chart with forecast
  */
 function createWastePredictiveChart(data) {
-    wastePredictiveChart = destroyChart(wastePredictiveChart);
     const canvasId = 'coo-waste-predictive-chart';
+    wastePredictiveChart = destroyChart(wastePredictiveChart, canvasId);
     setLoading(canvasId, false);
 
     const canvas = document.getElementById(canvasId);
@@ -510,6 +556,9 @@ function createWastePredictiveChart(data) {
         }
     });
 
+    // Restore legend state from previous render
+    restoreLegendState(wastePredictiveChart, canvasId);
+
     // Render alert banner
     renderAlertBanner(byEnterprise);
 }
@@ -518,8 +567,8 @@ function createWastePredictiveChart(data) {
  * Create OEE components predictive chart (multi-line)
  */
 function createOEEComponentsChart(data) {
-    oeeComponentsChart = destroyChart(oeeComponentsChart);
     const canvasId = 'coo-oee-components-chart';
+    oeeComponentsChart = destroyChart(oeeComponentsChart, canvasId);
     setLoading(canvasId, false);
 
     const canvas = document.getElementById(canvasId);
@@ -615,6 +664,9 @@ function createOEEComponentsChart(data) {
             }
         }
     });
+
+    // Restore legend state from previous render
+    restoreLegendState(oeeComponentsChart, canvasId);
 }
 
 /**
@@ -734,11 +786,11 @@ export function cleanup() {
         refreshInterval = null;
     }
     // Destroy existing charts
-    oeeChart = destroyChart(oeeChart);
-    wasteChart = destroyChart(wasteChart);
+    oeeChart = destroyChart(oeeChart, 'coo-oee-chart');
+    wasteChart = destroyChart(wasteChart, 'coo-waste-chart');
 
     // Destroy predictive charts
-    downtimeParetoChart = destroyChart(downtimeParetoChart);
-    wastePredictiveChart = destroyChart(wastePredictiveChart);
-    oeeComponentsChart = destroyChart(oeeComponentsChart);
+    downtimeParetoChart = destroyChart(downtimeParetoChart, 'coo-downtime-pareto-chart');
+    wastePredictiveChart = destroyChart(wastePredictiveChart, 'coo-waste-predictive-chart');
+    oeeComponentsChart = destroyChart(oeeComponentsChart, 'coo-oee-components-chart');
 }
