@@ -1161,6 +1161,7 @@ app.get('/api/oee/lines', async (req, res) => {
           r._measurement == "metric_quality"
         )
         |> filter(fn: (r) => r._value > 0 and r._value <= 150)
+        |> filter(fn: (r) => r.site == "Dallas" or r.site == "Dallas Line 1" or r.site == "Site1" or r.site == "Site2" or r.site == "Site3")
         ${enterpriseFilter}
         ${getFluxSiteFilter()}
         |> group(columns: ["enterprise", "site", "area", "_measurement"])
@@ -1276,6 +1277,7 @@ app.get('/api/waste/trends', async (req, res) => {
           r._measurement == "edge_reject_gate_status"
         )
         |> filter(fn: (r) => r._value >= 0)
+        |> filter(fn: (r) => r.site == "Dallas" or r.site == "Dallas Line 1" or r.site == "Site1" or r.site == "Site2" or r.site == "Site3")
         ${enterpriseFilter}
         |> group(columns: ["enterprise", "area", "_measurement"])
         |> aggregateWindow(every: 1h, fn: sum, createEmpty: false)
@@ -1429,6 +1431,7 @@ app.get('/api/waste/by-line', async (req, res) => {
           r._measurement == "edge_reject_gate_status"
         )
         |> filter(fn: (r) => r._value >= 0)
+        |> filter(fn: (r) => r.site == "Dallas" or r.site == "Dallas Line 1" or r.site == "Site1" or r.site == "Site2" or r.site == "Site3")
         ${enterpriseFilter}
         |> group(columns: ["enterprise", "site", "area", "_measurement"])
         |> sum()
@@ -2175,6 +2178,7 @@ app.get('/api/waste/breakdown', async (req, res) => {
           r._measurement == "workorder_quantitydefect"
         )
         |> filter(fn: (r) => r._value >= 0)
+        |> filter(fn: (r) => r.site == "Dallas" or r.site == "Dallas Line 1" or r.site == "Site1" or r.site == "Site2" or r.site == "Site3")
         |> group(columns: ["enterprise"])
         |> sum()
     `;
