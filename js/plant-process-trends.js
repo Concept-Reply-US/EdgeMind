@@ -577,25 +577,34 @@ async function fetchAndRender() {
     const productionPromise = safeFetch(`/api/production/volume?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Production');
     const energyPromise = safeFetch(`/api/production/energy?enterprise=${encodeURIComponent(enterprise)}&window=shift`, 'Energy');
 
-    // Render fast charts as soon as they resolve (don't wait for SPC)
-    Promise.all([downtimePromise, productionPromise, energyPromise]).then(([downtimeData, productionData, energyData]) => {
-        // Downtime chart
+    // Render each chart independently as soon as its data arrives (don't wait for SPC or each other)
+    downtimePromise.then(downtimeData => {
         if (downtimeData && downtimeData.paretoData && downtimeData.paretoData.length > 0) {
             createDowntimeChart(downtimeData);
         } else {
             setLoading('plant-downtime-chart', false);
             showEmptyState('plant-downtime-chart', 'No downtime events recorded');
         }
+    }).catch(error => {
+        console.error('Downtime chart error:', error);
+        setLoading('plant-downtime-chart', false);
+        showEmptyState('plant-downtime-chart', 'Failed to load downtime data');
+    });
 
-        // Production chart
+    productionPromise.then(productionData => {
         if (productionData && productionData.byLine && productionData.byLine.length > 0) {
             createProductionChart(productionData);
         } else {
             setLoading('plant-production-chart', false);
             showEmptyState('plant-production-chart', 'No production count data available');
         }
+    }).catch(error => {
+        console.error('Production chart error:', error);
+        setLoading('plant-production-chart', false);
+        showEmptyState('plant-production-chart', 'Failed to load production data');
+    });
 
-        // Energy chart
+    energyPromise.then(energyData => {
         if (energyData && energyData.byLine && energyData.byLine.length > 0) {
             createEnergyChart(energyData);
         } else {
@@ -603,10 +612,9 @@ async function fetchAndRender() {
             showEmptyState('plant-energy-chart', 'No energy consumption data available');
         }
     }).catch(error => {
-        console.error('Fast charts error:', error);
-        setLoading('plant-downtime-chart', false);
-        setLoading('plant-production-chart', false);
+        console.error('Energy chart error:', error);
         setLoading('plant-energy-chart', false);
+        showEmptyState('plant-energy-chart', 'Failed to load energy data');
     });
 
     // SPC renders independently when ready (slow endpoint doesn't block others)
