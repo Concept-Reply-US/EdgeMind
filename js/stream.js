@@ -4,6 +4,26 @@ import { state } from './state.js';
 import { escapeHtml } from './utils.js';
 
 /**
+ * Get event type from topic
+ */
+function getEventType(topic) {
+    const lowerTopic = topic.toLowerCase();
+    if (lowerTopic.includes('oee')) return 'oee';
+    if (lowerTopic.includes('state')) return 'state';
+    if (lowerTopic.includes('alarm')) return 'alarm';
+    return 'other';
+}
+
+/**
+ * Check if message matches current filter
+ */
+function matchesFilter(message) {
+    if (state.eventFilter === 'all') return true;
+    const eventType = getEventType(message.topic);
+    return eventType === state.eventFilter;
+}
+
+/**
  * Add MQTT message to the stream display
  */
 export function addMQTTMessageToStream(message) {
@@ -11,6 +31,9 @@ export function addMQTTMessageToStream(message) {
 
     const stream = document.getElementById('mqtt-stream');
     if (!stream) return;
+
+    // Check if message matches current filter
+    if (!matchesFilter(message)) return;
 
     if (state.stats.messageCount === 1) {
         stream.innerHTML = '';
@@ -27,12 +50,7 @@ export function addMQTTMessageToStream(message) {
     const line = document.createElement('div');
     line.className = 'stream-line';
 
-    const topic = message.topic.toLowerCase();
-    let eventType = 'other';
-    if (topic.includes('oee')) eventType = 'oee';
-    else if (topic.includes('state')) eventType = 'state';
-    else if (topic.includes('alarm')) eventType = 'alarm';
-
+    const eventType = getEventType(message.topic);
     line.setAttribute('data-event-type', eventType);
 
     const escapedTopic = escapeHtml(message.topic);
@@ -50,8 +68,8 @@ export function addMQTTMessageToStream(message) {
 
     stream.appendChild(line);
 
-    const maxWhileScrolled = 200;
-    const normalMax = 50;
+    const maxWhileScrolled = 100;
+    const normalMax = 30;
 
     if (isAtBottom) {
         while (stream.children.length > normalMax) {
@@ -79,15 +97,9 @@ export function filterEvents(eventType, clickedTab) {
     const stream = document.getElementById('mqtt-stream');
     if (!stream) return;
 
-    const lines = stream.querySelectorAll('.stream-line');
-    lines.forEach(line => {
-        const lineEventType = line.getAttribute('data-event-type');
-        if (eventType === 'all' || lineEventType === eventType) {
-            line.style.display = '';
-        } else {
-            line.style.display = 'none';
-        }
-    });
+    // Clear stream and re-render from state.messages with new filter
+    stream.innerHTML = '';
+    state.messages.forEach(msg => addMQTTMessageToStream(msg));
 }
 
 /**
