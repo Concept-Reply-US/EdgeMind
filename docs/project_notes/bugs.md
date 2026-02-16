@@ -415,4 +415,28 @@ This file tracks bugs encountered and their solutions for future reference.
   - Test coverage: All 407 existing tests pass after changes
 - **Changed Files**: `lib/oee/index.js`
 
+### 2026-02-16 - Enterprise Comparison View Shows "No site data available"
+- **Issue**: Enterprise Comparison view showed "No site data available" for all enterprises
+- **Root Cause**: Backend `/api/factory/status` returns enterprises as an array, but frontend expected an object keyed by enterprise name
+- **Solution**: Fixed in `js/coo-enterprise.js` by converting the array to a lookup object before rendering
+- **Prevention**: When consuming API responses, always verify the response shape (array vs object) against frontend expectations. Add defensive transformation at the consumption point.
+
+### 2026-02-16 - "hivemq" MQTT Broker Appearing as Factory Site
+- **Issue**: "hivemq" MQTT broker system topic appeared as a factory site under Enterprise A
+- **Root Cause**: No topic filtering at MQTT ingestion — broker system topics were written to InfluxDB alongside real factory data
+- **Solution**: Two-layer fix: (1) Added ingestion guard in `server.js` to reject topics not starting with "Enterprise", (2) Added denylist in `queryFactoryStatus()` to filter known non-factory entries from query results
+- **Prevention**: Always validate MQTT topic structure at ingestion before writing to InfluxDB. Broker system topics and vendor integration topics should never reach the data store.
+
+### 2026-02-16 - Enterprise A OEE Showing 48.2% Instead of Real ~96%
+- **Issue**: Enterprise A OEE showed 48.2% on dashboard instead of the real ~96% value
+- **Root Cause**: OEE v2 queries averaged across ALL "sites" including vendor integration endpoints (prosys, opto22, maintainx, etc.) that publish to Enterprise A topics. These vendor sites have low or zero OEE values that drag down the average.
+- **Solution**: Added site allowlist filter in Tier 1/Tier 2 Flux queries so only real factory sites (Dallas, Dallas Line 1) are included in OEE calculations
+- **Prevention**: OEE queries must always filter to known factory sites. Vendor integrations publish data under enterprise topics but are not real production sites.
+
+### 2026-02-16 - Vendor MQTT Data Polluting Equipment States and Line Status
+- **Issue**: Vendor MQTT data (prosys, opto22, maintainx, etc.) polluted equipment states, line status, and agent context across 5 endpoints
+- **Root Cause**: No site filtering anywhere in the equipment state pipeline — all sites (including vendor integration endpoints) were treated as real factory data
+- **Solution**: Created config-driven allowlist (`config/factory-sites.json` and `lib/factory-sites.js`) applied at all 5 pollution points: equipment state cache ingestion, `/api/equipment/states`, `/api/factory/status`, `/api/oee/v2`, and agent context builder
+- **Prevention**: Use the centralized site allowlist (`config/factory-sites.json`) for any new endpoints that query factory data. Defense in depth — filter at both ingestion and query levels.
+
 <!-- Add new bugs above this line -->
