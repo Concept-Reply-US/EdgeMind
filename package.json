@@ -41,7 +41,7 @@
     "supertest": "^7.2.2"
   },
   "overrides": {
-    "fast-xml-parser": "5.3.4"
+    "fast-xml-parser": "5.3.6"
   },
   "engines": {
     "node": ">=18.0.0"
