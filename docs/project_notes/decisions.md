@@ -788,4 +788,54 @@ Implement four priority levels of improvements:
 
 ---
 
+### ADR-021: Allowlist Over Denylist for Site Filtering (2026-02-16)
+
+**Context:**
+- Conference MQTT broker has dozens of vendor namespaces that change frequently (prosys, opto22, maintainx, hivemq, aveva, etc.)
+- Initial fix for hivemq used a denylist approach — reject known non-factory topics
+- Within hours, new vendor namespaces appeared that weren't on the denylist, re-introducing pollution
+
+**Decision:**
+- Use a positive allowlist (Dallas, Dallas Line 1, Site1, Site2, Site3) instead of a negative denylist
+- Only sites explicitly listed in `config/factory-sites.json` are included in data processing
+- Unknown/new sites are excluded by default — safe by default
+
+**Alternatives Considered:**
+- Denylist approach → Rejected: new vendors appear constantly on the shared broker. Every new vendor requires a code update. The denylist for hivemq was bypassed within hours by prosys, opto22, etc.
+- Topic-level MQTT subscription filtering (subscribe to specific topics instead of `#`) → Rejected: would miss legitimate new factory data topics
+
+**Consequences:**
+- ✅ Safe by default — unknown sites cannot pollute data
+- ✅ New vendors are automatically excluded without code changes
+- ✅ Single source of truth in JSON config file
+- ⚠️ Genuine new factory sites must be explicitly added to the allowlist or they'll be invisible
+
+---
+
+### ADR-022: Direct ECS Task Definition Update for Emergency Scaling (2026-02-16)
+
+**Context:**
+- Prod InfluxDB running on 1 vCPU / 2GB RAM couldn't handle conference data volume
+- CPU completely saturated, all Flux queries timing out, entire application non-functional
+- CDK deploy takes 10-15 minutes minimum (synth → changeset → deploy → stabilize)
+- Application was down during live conference — needed immediate fix
+
+**Decision:**
+- Registered a new ECS task definition directly via AWS CLI (`edgemind-prod-influxdb:3` with 2 vCPU / 4GB RAM)
+- Forced new deployment via `aws ecs update-service --force-new-deployment`
+- Bypassed CDK entirely for speed
+
+**Alternatives Considered:**
+- CDK deploy → Rejected: too slow (10-15 min) for an emergency during live conference
+- Vertical scaling via CDK diff/deploy → Rejected: same time issue, plus risk of CDK touching other stacks
+
+**Consequences:**
+- ✅ InfluxDB recovered within 2-3 minutes (new task pulled and started)
+- ✅ Application immediately functional again
+- ⚠️ **CDK state is now OUT OF SYNC with production** — the `infra/` CDK code still defines 1 vCPU / 2GB for InfluxDB
+- ⚠️ Next `cdk deploy` will attempt to revert to 1 vCPU / 2GB unless CDK code is updated first
+- ⚠️ Must update `infra/stacks/database_stack.py` to match: 2 vCPU / 4GB for InfluxDB before any future CDK deploy
+
+---
+
 <!-- Add new decisions above this line -->

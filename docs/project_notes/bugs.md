@@ -439,4 +439,20 @@ This file tracks bugs encountered and their solutions for future reference.
 - **Solution**: Created config-driven allowlist (`config/factory-sites.json` and `lib/factory-sites.js`) applied at all 5 pollution points: equipment state cache ingestion, `/api/equipment/states`, `/api/factory/status`, `/api/oee/v2`, and agent context builder
 - **Prevention**: Use the centralized site allowlist (`config/factory-sites.json`) for any new endpoints that query factory data. Defense in depth — filter at both ingestion and query levels.
 
+### 2026-02-16 - Enterprise A OEE Null on Prod (Fallback Tier Mismatch)
+- **Issue**: Enterprise A OEE returned `null` on production after deploying fallback config
+- **Root Cause**: Fallback config in `applyFallbackConfig()` hardcoded `tier: 1` for all enterprises, but Enterprise A has `overall: null` (no direct OEE measurement). Tier 1 requires an `overall` measurement to query — when it doesn't exist, the query returns null.
+- **Solution**: Changed fallback tier detection to be dynamic: `tier = measurements.overall ? 1 : 2` — auto-detects the correct tier based on which measurements are actually available in the fallback config
+- **Prevention**: When defining fallback configurations, derive the tier from the available measurement set rather than hardcoding. Enterprise A uses Tier 2 (A/P/Q components), Enterprise B uses Tier 1 (has `metric_oee`).
+- **Files**: `lib/oee/index.js`
+
+### 2026-02-16 - InfluxDB Query Timeouts Killing Agentic Loop and All API Endpoints
+- **Issue**: All Flux queries timing out across the entire application — agentic loop stuck on "No trend data available", OEE endpoints returning stale/null data, schema discovery failing
+- **Root Cause**: Conference MQTT broker flooding data from dozens of vendor sites (prosys, opto22, maintainx, aveva, hivemq, etc.). InfluxDB at 186% CPU on dev EC2, and prod was running on only 1 vCPU which was completely saturated. Without site filtering, every Flux query scanned all vendor data — exponentially more data than intended.
+- **Solution**: Two-part fix:
+  1. Added `getFluxSiteFilter()` from `lib/factory-sites.js` to ALL 8 Flux queries across 5 files — queries now only scan real factory sites (Dallas, Site1-3), dramatically reducing scan volume
+  2. Scaled prod InfluxDB from 1 vCPU/2GB → 2 vCPU/4GB via direct ECS task definition update (`edgemind-prod-influxdb:3`)
+- **Prevention**: ALL Flux queries must include a site allowlist filter. Use `getFluxSiteFilter()` from `lib/factory-sites.js` in any new Flux query. Monitor InfluxDB CPU via CloudWatch — sustained >80% indicates query scan volume is too high.
+- **Files**: `lib/ai/index.js`, `lib/ai/tools.js`, `lib/oee/index.js`, `lib/schema/index.js`, `server.js`
+
 <!-- Add new bugs above this line -->
