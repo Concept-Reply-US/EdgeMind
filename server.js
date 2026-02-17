@@ -2638,6 +2638,200 @@ app.post('/api/influx/query', express.json(), async (req, res) => {
   }
 });
 
+// ==================== ADMIN ENDPOINTS ====================
+
+/**
+ * @swagger
+ * /api/admin/db-info:
+ *   get:
+ *     summary: Get InfluxDB bucket information
+ *     description: Returns bucket metadata including retention policy and approximate data size
+ *     tags:
+ *       - Admin
+ *     responses:
+ *       200:
+ *         description: Bucket information retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 id:
+ *                   type: string
+ *                   description: Bucket ID
+ *                 name:
+ *                   type: string
+ *                   description: Bucket name
+ *                 orgID:
+ *                   type: string
+ *                   description: Organization ID
+ *                 retentionRules:
+ *                   type: array
+ *                   description: Retention policy rules
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       type:
+ *                         type: string
+ *                       everySeconds:
+ *                         type: number
+ *                 retentionPeriodHrs:
+ *                   type: number
+ *                   description: Retention period in hours (0 = infinite)
+ *       500:
+ *         description: Failed to retrieve bucket information
+ */
+app.get('/api/admin/db-info', async (req, res) => {
+  try {
+    console.warn('[ADMIN] Getting bucket info');
+    const { getBucketInfo } = require('./lib/influx/client');
+    const bucketInfo = await getBucketInfo();
+
+    const retentionRules = bucketInfo.retentionRules || [];
+    const retentionSeconds = retentionRules.length > 0 && retentionRules[0].everySeconds
+      ? retentionRules[0].everySeconds
+      : 0;
+
+    res.json({
+      id: bucketInfo.id,
+      name: bucketInfo.name,
+      orgID: bucketInfo.orgID,
+      retentionRules: bucketInfo.retentionRules,
+      retentionPeriodHrs: retentionSeconds > 0 ? retentionSeconds / 3600 : 0,
+      createdAt: bucketInfo.createdAt,
+      updatedAt: bucketInfo.updatedAt
+    });
+  } catch (error) {
+    console.error('[ADMIN] Failed to get bucket info:', error);
+    res.status(500).json({
+      error: 'Failed to retrieve bucket information',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/set-retention:
+ *   post:
+ *     summary: Set InfluxDB bucket retention policy
+ *     description: Updates the retention policy for the factory data bucket
+ *     tags:
+ *       - Admin
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - hours
+ *             properties:
+ *               hours:
+ *                 type: number
+ *                 description: Number of hours to retain data (0 = infinite)
+ *                 example: 48
+ *     responses:
+ *       200:
+ *         description: Retention policy updated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 retentionPeriodHrs:
+ *                   type: number
+ *       400:
+ *         description: Invalid request body
+ *       500:
+ *         description: Failed to update retention policy
+ */
+app.post('/api/admin/set-retention', express.json(), async (req, res) => {
+  try {
+    const { hours } = req.body;
+
+    if (typeof hours !== 'number' || hours < 0) {
+      return res.status(400).json({
+        error: 'Invalid hours parameter',
+        message: 'hours must be a non-negative number (0 = infinite retention)'
+      });
+    }
+
+    console.warn(`[ADMIN] Setting retention policy to ${hours} hours`);
+    const { setRetentionPolicy } = require('./lib/influx/client');
+    await setRetentionPolicy(hours);
+
+    res.json({
+      success: true,
+      message: hours > 0
+        ? `Retention policy set to ${hours} hours`
+        : 'Retention policy set to infinite (no automatic deletion)',
+      retentionPeriodHrs: hours
+    });
+  } catch (error) {
+    console.error('[ADMIN] Failed to set retention policy:', error);
+    res.status(500).json({
+      error: 'Failed to set retention policy',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/admin/clear-db:
+ *   post:
+ *     summary: Clear all data from InfluxDB bucket
+ *     description: Deletes all time-series data from the factory bucket. This operation cannot be undone.
+ *     tags:
+ *       - Admin
+ *     responses:
+ *       200:
+ *         description: Database cleared successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *       500:
+ *         description: Failed to clear database
+ */
+app.post('/api/admin/clear-db', async (req, res) => {
+  try {
+    console.warn('[ADMIN] CLEARING ALL DATA FROM INFLUXDB BUCKET');
+    const { clearBucket } = require('./lib/influx/client');
+    await clearBucket();
+
+    // Also clear schema cache since data is gone
+    const { schemaCache } = require('./lib/state');
+    schemaCache.measurements = null;
+    schemaCache.lastRefresh = null;
+    schemaCache.hierarchy = null;
+    schemaCache.hierarchyLastRefresh = null;
+
+    console.warn('[ADMIN] Database cleared successfully');
+
+    res.json({
+      success: true,
+      message: 'All data cleared from InfluxDB bucket'
+    });
+  } catch (error) {
+    console.error('[ADMIN] Failed to clear database:', error);
+    res.status(500).json({
+      error: 'Failed to clear database',
+      message: error.message
+    });
+  }
+});
+
 // Start HTTP server
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {

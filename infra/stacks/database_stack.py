@@ -117,6 +117,7 @@ class DatabaseStack(Stack):
             environment={
                 "DOCKER_INFLUXDB_INIT_MODE": "setup",
                 "DOCKER_INFLUXDB_INIT_USERNAME": "admin",
+                "DOCKER_INFLUXDB_INIT_RETENTION": "48h",  # 48-hour retention on initial bucket
             },
             secrets={
                 # Get token from Secrets Manager
