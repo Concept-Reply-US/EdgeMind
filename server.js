@@ -2808,23 +2808,28 @@ app.post('/api/admin/clear-db', async (req, res) => {
   try {
     console.warn('[ADMIN] CLEARING ALL DATA FROM INFLUXDB BUCKET');
     const { clearBucket } = require('./lib/influx/client');
-    await clearBucket();
 
-    // Also clear schema cache since data is gone
-    const { schemaCache } = require('./lib/state');
-    schemaCache.measurements = null;
-    schemaCache.lastRefresh = null;
-    schemaCache.hierarchy = null;
-    schemaCache.hierarchyLastRefresh = null;
-
-    console.warn('[ADMIN] Database cleared successfully');
-
+    // Respond immediately — the delete runs in the background
+    // ALB gateway timeout is ~30s but InfluxDB deletes on large datasets take longer
     res.json({
       success: true,
-      message: 'All data cleared from InfluxDB bucket'
+      message: 'Database clear initiated. Large datasets may take a minute to fully purge.'
+    });
+
+    // Fire the delete after responding
+    clearBucket().then(() => {
+      // Clear schema cache since data is gone
+      const { schemaCache } = require('./lib/state');
+      schemaCache.measurements = null;
+      schemaCache.lastRefresh = null;
+      schemaCache.hierarchy = null;
+      schemaCache.hierarchyLastRefresh = null;
+      console.warn('[ADMIN] Database cleared successfully');
+    }).catch(err => {
+      console.error('[ADMIN] Background database clear failed:', err);
     });
   } catch (error) {
-    console.error('[ADMIN] Failed to clear database:', error);
+    console.error('[ADMIN] Failed to initiate database clear:', error);
     res.status(500).json({
       error: 'Failed to clear database',
       message: error.message
