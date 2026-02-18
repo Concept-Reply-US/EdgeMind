@@ -122,7 +122,7 @@ class DatabaseStack(Stack):
             secrets={
                 # Get token from Secrets Manager
                 "DOCKER_INFLUXDB_INIT_PASSWORD": ecs.Secret.from_secrets_manager(
-                    influxdb_secret, "token"
+                    influxdb_secret, "password"
                 ),
                 "DOCKER_INFLUXDB_INIT_ADMIN_TOKEN": ecs.Secret.from_secrets_manager(
                     influxdb_secret, "token"
