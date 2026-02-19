@@ -60,7 +60,11 @@ async function sendMessage() {
 
     if (!response.ok) throw new Error('Chat failed')
 
-    const reader = response.body!.getReader()
+    if (!response.body) {
+      chatHistory.value.push({ role: 'assistant', content: 'Error: No response stream available' })
+      return
+    }
+    const reader = response.body.getReader()
     const decoder = new TextDecoder()
     let streamText = ''
     let lastWasTool = false

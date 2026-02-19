@@ -102,7 +102,7 @@ async function fetchWorkOrders(): Promise<void> {
 async function fetchAndRender(): Promise<void> {
   try {
     error.value = null
-    if (loading.value) {
+    if (workOrders.value.length === 0) {
       loading.value = true
     }
 

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useConnectionStore } from '@/stores/connection'
 import { useOEE } from '@/composables/useOEE'
 import { useQuality } from '@/composables/useQuality'
 import { useEquipment } from '@/composables/useEquipment'
@@ -14,6 +15,7 @@ import { formatNumber } from '@/utils'
 import type { Anomaly, ChartData, ChartOptions } from '@/types'
 
 const appStore = useAppStore()
+const connectionStore = useConnectionStore()
 const { fetchOEE, fetchOEEBreakdown } = useOEE()
 const { fetchWasteTrends, fetchScrapByLine, fetchQualityMetrics, fetchActiveSensorCount } = useQuality()
 const { fetchEquipmentStates } = useEquipment()
@@ -83,8 +85,9 @@ function selectFactory(factory: string) {
 }
 
 const dataRate = computed(() => {
-  const count = appStore.stats.messageCount
-  return formatNumber(count) + '/min'
+  const perSec = connectionStore.messageRate
+  const perMin = perSec * 60
+  return formatNumber(perMin) + '/min'
 })
 
 async function refreshAll() {

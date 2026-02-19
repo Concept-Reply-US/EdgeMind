@@ -84,6 +84,9 @@ export const useAppStore = defineStore('app', () => {
     if (insight.anomalies && insight.anomalies.length > 0) {
       anomalies.value.push(...insight.anomalies)
       stats.value.anomalyCount += insight.anomalies.length
+      if (anomalies.value.length > 200) {
+        anomalies.value = anomalies.value.slice(-200)
+      }
     }
   }
 

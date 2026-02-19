@@ -82,7 +82,9 @@ async function launchScenario(scenarioId: string) {
 
 async function stopScenario() {
   try {
-    const response = await fetch('/api/demo/scenarios/stop', {
+    if (!scenarioStatus.value.scenario?.id) return
+
+    const response = await fetch(`/api/demo/scenarios/${scenarioStatus.value.scenario.id}/stop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })

@@ -14,7 +14,9 @@ const emit = defineEmits<{
 }>()
 
 function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') emit('close')
+  if (e.key === 'Escape' && props.show) {
+    emit('close')
+  }
 }
 
 function handleBackdrop(e: MouseEvent) {
