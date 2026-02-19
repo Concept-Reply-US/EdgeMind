@@ -2,11 +2,14 @@ import { onScopeDispose } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useAppStore } from '@/stores/app'
 import { useConnectionStore } from '@/stores/connection'
+import { useNotificationStore } from '@/stores/notifications'
+import type { NotificationSeverity } from '@/stores/notifications'
 import { WS_URL } from '@/constants'
 
 export function useWebSocket() {
   const appStore = useAppStore()
   const connectionStore = useConnectionStore()
+  const notificationStore = useNotificationStore()
   const { isConnected, messageRate } = storeToRefs(connectionStore)
 
   let ws: WebSocket | null = null
@@ -88,6 +91,18 @@ export function useWebSocket() {
       case 'claude_insight':
       case 'trend_insight':
         appStore.addInsight(message.data)
+
+        // Show push notification for demo-triggered anomalies
+        if (message.data.demoTriggered) {
+          const severity = mapInsightSeverity(message.data.severity)
+          notificationStore.addNotification({
+            summary: message.data.summary || message.data.text || 'Anomaly detected by AI',
+            severity,
+            badge: 'AI ALERT',
+            meta: message.data.demoScenario ? `Scenario: ${message.data.demoScenario}` : undefined,
+            dismissMs: 20000
+          })
+        }
         break
 
       case 'equipment_state':
@@ -110,6 +125,12 @@ export function useWebSocket() {
         appStore.addCesmiiWorkOrder(message.data)
         break
     }
+  }
+
+  function mapInsightSeverity(severity?: string): NotificationSeverity {
+    if (severity === 'high' || severity === 'critical') return 'critical'
+    if (severity === 'medium') return 'warning'
+    return 'info'
   }
 
   function send(data: unknown) {

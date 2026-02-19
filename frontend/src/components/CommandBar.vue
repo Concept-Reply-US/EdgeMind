@@ -47,7 +47,9 @@ const subNavItems: Record<PersonaType, SubNavItem[]> = {
     { label: 'Line Status', routeName: 'plant-line-status' },
     { label: 'OEE Drill-down', routeName: 'plant-oee-drilldown' },
     { label: 'Equipment Health', routeName: 'plant-equipment' },
-    { label: 'Alerts & Work Orders', routeName: 'plant-alerts' }
+    { label: 'Alerts & Work Orders', routeName: 'plant-alerts' },
+    { label: 'CESMII', routeName: 'plant-cesmii' },
+    { label: 'Process Trends', routeName: 'plant-process-trends' }
   ],
   demo: [
     { label: 'Scenario Selector', routeName: 'demo-scenarios' },

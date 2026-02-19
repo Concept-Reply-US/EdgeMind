@@ -3,6 +3,8 @@ import { watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import CommandBar from '@/components/CommandBar.vue'
 import Footer from '@/components/Footer.vue'
+import ChatPanel from '@/components/chat/ChatPanel.vue'
+import NotificationToast from '@/components/ui/NotificationToast.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 import { usePersonaStore } from '@/stores/persona'
@@ -36,6 +38,8 @@ watchEffect(() => {
     <RouterView />
   </div>
   <Footer />
+  <ChatPanel />
+  <NotificationToast />
 </template>
 
 <style>

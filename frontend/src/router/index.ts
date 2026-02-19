@@ -25,6 +25,8 @@ const router = createRouter({
         { path: 'oee-drilldown', name: 'plant-oee-drilldown', component: () => import('@/views/plant/OEEDrilldown.vue') },
         { path: 'equipment', name: 'plant-equipment', component: () => import('@/views/plant/Equipment.vue') },
         { path: 'alerts', name: 'plant-alerts', component: () => import('@/views/plant/Alerts.vue') },
+        { path: 'cesmii', name: 'plant-cesmii', component: () => import('@/views/plant/CesmiiWorkOrders.vue') },
+        { path: 'process-trends', name: 'plant-process-trends', component: () => import('@/views/plant/ProcessTrends.vue') },
       ]
     },
     {
