@@ -98,15 +98,19 @@ export interface CesmiiWorkOrder {
 }
 
 export interface FactoryStatusEnterprise {
-  enterprise: string
-  oee?: number
+  name: string
+  oee?: number | null
+  status?: 'healthy' | 'warning' | 'critical' | 'unknown'
   sites?: FactoryStatusSite[]
 }
 
 export interface FactoryStatusSite {
-  site: string
-  oee?: number
-  lines?: number
+  name: string
+  oee?: number | null
+  status?: 'healthy' | 'warning' | 'critical' | 'unknown'
+  availability?: number | null
+  performance?: number | null
+  quality?: number | null
 }
 
 export interface LineOEE {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watchEffect } from 'vue'
+import { ref, watchEffect, provide } from 'vue'
 import { useRoute } from 'vue-router'
 import CommandBar from '@/components/CommandBar.vue'
 import Footer from '@/components/Footer.vue'
@@ -15,7 +15,10 @@ const personaStore = usePersonaStore()
 const showSettings = ref(false)
 
 // Auto-connect WebSocket
-useWebSocket()
+const { sendAnomalyFilters } = useWebSocket()
+
+// Provide sendAnomalyFilters to all child components
+provide('sendAnomalyFilters', sendAnomalyFilters)
 
 // Keyboard shortcuts (1/2/3)
 useKeyboardShortcuts()

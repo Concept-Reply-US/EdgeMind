@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useAppStore } from '@/stores/app'
 import type { Insight, Anomaly } from '@/types'
 import { SLEEPING_AGENT_MESSAGES } from '@/constants'
@@ -10,6 +10,10 @@ const sleepingMessage = ref<string>(
   SLEEPING_AGENT_MESSAGES[Math.floor(Math.random() * SLEEPING_AGENT_MESSAGES.length)] ||
   'Agent on standby. Data collection continues.'
 )
+const filterInput = ref('')
+const filtersExpanded = ref(false)
+
+const sendAnomalyFilters = inject<(rules: string[]) => void>('sendAnomalyFilters')
 
 const emit = defineEmits<{
   'select-anomaly': [anomaly: Anomaly]
@@ -89,6 +93,39 @@ async function togglePause() {
   }
 }
 
+function addFilter() {
+  const rule = filterInput.value.trim()
+  if (!rule) return
+
+  if (appStore.anomalyFilterRules.length >= 10) {
+    alert('Maximum 10 filter rules allowed')
+    return
+  }
+
+  const success = appStore.addAnomalyFilterRule(rule)
+  if (success) {
+    filterInput.value = ''
+    // Send updated filters to server
+    if (sendAnomalyFilters) {
+      sendAnomalyFilters(appStore.anomalyFilterRules)
+    }
+  }
+}
+
+function removeFilter(index: number) {
+  appStore.removeAnomalyFilterRule(index)
+  // Send updated filters to server
+  if (sendAnomalyFilters) {
+    sendAnomalyFilters(appStore.anomalyFilterRules)
+  }
+}
+
+function handleFilterKeydown(event: KeyboardEvent) {
+  if (event.key === 'Enter') {
+    addFilter()
+  }
+}
+
 onMounted(async () => {
   try {
     const res = await fetch('/api/agent/status')
@@ -122,6 +159,46 @@ onMounted(async () => {
       <button class="insight-tab" :class="{ active: activeTab === 'anomalies' }" @click="activeTab = 'anomalies'">
         Anomalies ({{ anomalyCount }})
       </button>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="filter-section">
+      <button class="filter-toggle" @click="filtersExpanded = !filtersExpanded">
+        <span>{{ filtersExpanded ? '▼' : '▶' }}</span>
+        Filters ({{ appStore.anomalyFilterRules.length }})
+      </button>
+
+      <div v-if="filtersExpanded" class="filter-content">
+        <div class="filter-input-group">
+          <input
+            v-model="filterInput"
+            type="text"
+            class="filter-input"
+            placeholder="Add filter rule..."
+            maxlength="200"
+            :disabled="appStore.anomalyFilterRules.length >= 10"
+            @keydown="handleFilterKeydown"
+          />
+          <button
+            class="filter-submit-btn"
+            :disabled="appStore.anomalyFilterRules.length >= 10 || !filterInput.trim()"
+            @click="addFilter"
+          >
+            Add
+          </button>
+        </div>
+
+        <div v-if="appStore.anomalyFilterRules.length > 0" class="active-filters">
+          <div
+            v-for="(rule, index) in appStore.anomalyFilterRules"
+            :key="index"
+            class="filter-chip"
+          >
+            <span class="filter-chip-text" :title="rule">{{ rule }}</span>
+            <span class="filter-chip-remove" @click="removeFilter(index)">×</span>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Sleeping Message -->
@@ -332,5 +409,131 @@ onMounted(async () => {
 @keyframes avatarPulse {
   0%, 100% { box-shadow: 0 0 20px rgba(0, 255, 255, 0.4); }
   50% { box-shadow: 0 0 30px rgba(255, 0, 255, 0.6); }
+}
+
+/* Filter Section */
+.filter-section {
+  margin-bottom: 15px;
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.filter-toggle {
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: var(--accent-cyan);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.2s;
+}
+
+.filter-toggle:hover {
+  background: rgba(0, 255, 255, 0.05);
+}
+
+.filter-toggle span:first-child {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.filter-content {
+  padding: 12px;
+  border-top: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.filter-input-group {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.filter-input {
+  flex: 1;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--accent-cyan);
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.filter-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.filter-submit-btn {
+  padding: 8px 16px;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  border-radius: 4px;
+  color: var(--accent-cyan);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.filter-submit-btn:hover:not(:disabled) {
+  background: rgba(0, 255, 255, 0.2);
+  border-color: var(--accent-cyan);
+}
+
+.filter-submit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid rgba(0, 255, 255, 0.4);
+  border-radius: 12px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+}
+
+.filter-chip-text {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-chip-remove {
+  cursor: pointer;
+  color: var(--accent-red);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: opacity 0.2s;
+}
+
+.filter-chip-remove:hover {
+  opacity: 0.7;
 }
 </style>

@@ -36,6 +36,7 @@ export const useAppStore = defineStore('app', () => {
   const equipmentStates = ref<Map<string, EquipmentState>>(new Map())
   const streamPaused = ref(false)
   const anomalyFilters = ref<string[]>([])
+  const anomalyFilterRules = ref<string[]>([])
   const thresholdSettings = ref<ThresholdSettings>({
     oeeBaseline: 70,
     oeeWorldClass: 85,
@@ -48,11 +49,25 @@ export const useAppStore = defineStore('app', () => {
 
   // Computed
   const filteredInsights = computed(() => {
-    if (insightFilter.value === 'all') return insights.value
-    return insights.value.filter(i => {
-      if (insightFilter.value === 'anomalies') return i.anomalies && i.anomalies.length > 0
-      return true
-    })
+    let filtered = insights.value
+
+    // Apply insight filter type
+    if (insightFilter.value === 'anomalies') {
+      filtered = filtered.filter(i => i.anomalies && i.anomalies.length > 0)
+    }
+
+    // Apply anomaly filter rules (text-based substring matching)
+    if (anomalyFilterRules.value.length > 0) {
+      filtered = filtered.filter(insight => {
+        const text = (insight.summary || insight.text || '').toLowerCase()
+        // Show insight if it matches at least one filter rule
+        return anomalyFilterRules.value.some(rule =>
+          text.includes(rule.toLowerCase())
+        )
+      })
+    }
+
+    return filtered
   })
 
   const enterpriseParam = computed(() => {
@@ -133,6 +148,21 @@ export const useAppStore = defineStore('app', () => {
     anomalyFilters.value = filters
   }
 
+  function _addAnomalyFilterRule(rule: string) {
+    const trimmed = rule.trim()
+    if (!trimmed || anomalyFilterRules.value.length >= 10) {
+      return false
+    }
+    anomalyFilterRules.value.push(trimmed)
+    return true
+  }
+
+  function _removeAnomalyFilterRule(index: number) {
+    if (index >= 0 && index < anomalyFilterRules.value.length) {
+      anomalyFilterRules.value.splice(index, 1)
+    }
+  }
+
   function setThresholdSettings(settings: ThresholdSettings) {
     thresholdSettings.value = settings
   }
@@ -149,13 +179,16 @@ export const useAppStore = defineStore('app', () => {
     uniqueTopics, messageRateHistory, topicCounts,
     enterpriseCounts, selectedFactory, insightFilter,
     eventFilter, equipmentStates, streamPaused,
-    anomalyFilters, thresholdSettings, cesmiiWorkOrders,
+    anomalyFilters, anomalyFilterRules, thresholdSettings, cesmiiWorkOrders,
     insightsEnabled,
     // computed
     filteredInsights, enterpriseParam, activeSensorCount,
     // actions
     addMessage, addInsight, setInitialState, selectFactory,
-    updateEquipmentState, setAnomalyFilters, setThresholdSettings,
+    updateEquipmentState, setAnomalyFilters,
+    addAnomalyFilterRule: _addAnomalyFilterRule,
+    removeAnomalyFilterRule: _removeAnomalyFilterRule,
+    setThresholdSettings,
     addCesmiiWorkOrder
   }
 })

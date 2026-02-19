@@ -139,6 +139,13 @@ export function useWebSocket() {
     }
   }
 
+  function sendAnomalyFilters(rules: string[]) {
+    send({
+      type: 'update_anomaly_filter',
+      filters: rules
+    })
+  }
+
   function disconnect() {
     if (reconnectTimeout) {
       clearTimeout(reconnectTimeout)
@@ -173,6 +180,7 @@ export function useWebSocket() {
     isConnected,
     messageRate,
     send,
+    sendAnomalyFilters,
     disconnect
   }
 }

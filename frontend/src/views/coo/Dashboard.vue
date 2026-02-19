@@ -12,11 +12,11 @@ import InsightsPanel from '@/components/insights/InsightsPanel.vue'
 import MqttStream from '@/components/stream/MqttStream.vue'
 import AnomalyModal from '@/components/modals/AnomalyModal.vue'
 import { formatNumber } from '@/utils'
-import type { Anomaly, ChartData, ChartOptions } from '@/types'
+import type { Anomaly, ChartData, ChartOptions, FactoryStatusEnterprise } from '@/types'
 
 const appStore = useAppStore()
 const connectionStore = useConnectionStore()
-const { fetchOEE, fetchOEEBreakdown } = useOEE()
+const { fetchOEE, fetchOEEBreakdown, fetchFactoryStatus } = useOEE()
 const { fetchWasteTrends, fetchScrapByLine, fetchQualityMetrics, fetchActiveSensorCount } = useQuality()
 const { fetchEquipmentStates } = useEquipment()
 
@@ -24,6 +24,7 @@ const oeeValue = ref(0)
 const oeeStatus = ref('')
 const showAnomalyModal = ref(false)
 const selectedAnomaly = ref<Anomaly | null>(null)
+const factoryStatus = ref<{ enterprises?: FactoryStatusEnterprise[] }>({ enterprises: [] })
 
 // Chart data refs
 const oeeBreakdownData = ref<ChartData<'bar'>>({
@@ -118,12 +119,13 @@ const equipmentSummary = computed(() => {
 })
 
 async function refreshAll() {
-  const [oeeResult, breakdownResult, wasteTrends, scrapByLine, quality] = await Promise.allSettled([
+  const [oeeResult, breakdownResult, wasteTrends, scrapByLine, quality, factoryStatusResult] = await Promise.allSettled([
     fetchOEE(),
     fetchOEEBreakdown(),
     fetchWasteTrends(),
     fetchScrapByLine(),
-    fetchQualityMetrics()
+    fetchQualityMetrics(),
+    fetchFactoryStatus()
   ])
 
   fetchEquipmentStates()
@@ -217,6 +219,10 @@ async function refreshAll() {
         status
       }
     })
+  }
+
+  if (factoryStatusResult.status === 'fulfilled' && factoryStatusResult.value) {
+    factoryStatus.value = factoryStatusResult.value
   }
 }
 
@@ -339,6 +345,40 @@ function onSelectAnomaly(anomaly: Anomaly) {
 
       <Card title="Scrap by Line" :span="6">
         <BarChart :chart-data="scrapData" :options="chartOptions" :height="280" />
+      </Card>
+
+      <Card title="Production Heatmap" :span="12">
+        <div v-if="!factoryStatus.enterprises || factoryStatus.enterprises.length === 0" class="heatmap-loading">
+          No factory data available
+        </div>
+        <div v-else class="heatmap-container">
+          <div
+            v-for="enterprise in factoryStatus.enterprises"
+            :key="enterprise.name"
+            class="enterprise-group"
+          >
+            <div class="enterprise-header" :class="enterprise.status">
+              <div class="enterprise-name">{{ enterprise.name }}</div>
+              <div class="enterprise-oee" :class="enterprise.status">
+                {{ enterprise.oee !== null && enterprise.oee !== undefined ? `${enterprise.oee}%` : 'N/A' }}
+              </div>
+            </div>
+            <div class="sites-grid">
+              <div
+                v-for="site in enterprise.sites"
+                :key="`${enterprise.name}-${site.name}`"
+                class="site-card"
+                :class="site.status"
+              >
+                <div class="site-name">{{ site.name }}</div>
+                <div class="site-oee" :class="site.status">
+                  {{ site.oee !== null && site.oee !== undefined ? `${site.oee}%` : 'N/A' }}
+                </div>
+                <div class="site-status">{{ site.status }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
       </Card>
 
       <Card title="Quality Metrics" :span="12">
@@ -607,5 +647,143 @@ function onSelectAnomaly(anomaly: Anomaly) {
   .quality-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Production Heatmap */
+.heatmap-container {
+  margin-top: 10px;
+}
+
+.heatmap-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-dim);
+}
+
+.enterprise-group {
+  margin-bottom: 20px;
+}
+
+.enterprise-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 15px;
+  background: rgba(0, 255, 255, 0.1);
+  border-left: 4px solid var(--accent-cyan);
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-family: 'Orbitron', sans-serif;
+  font-weight: 700;
+}
+
+.enterprise-header.healthy {
+  background: rgba(0, 255, 136, 0.1);
+  border-left-color: var(--accent-green);
+}
+
+.enterprise-header.warning {
+  background: rgba(255, 191, 0, 0.1);
+  border-left-color: var(--accent-amber);
+}
+
+.enterprise-header.critical {
+  background: rgba(255, 51, 102, 0.1);
+  border-left-color: var(--accent-red);
+}
+
+.enterprise-name {
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.enterprise-oee {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.enterprise-oee.healthy {
+  color: var(--accent-green);
+}
+
+.enterprise-oee.warning {
+  color: var(--accent-amber);
+}
+
+.enterprise-oee.critical {
+  color: var(--accent-red);
+}
+
+.sites-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.site-card {
+  padding: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 2px solid;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.site-card.healthy {
+  border-color: var(--accent-green);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.site-card.warning {
+  border-color: var(--accent-amber);
+  background: rgba(255, 191, 0, 0.05);
+}
+
+.site-card.critical {
+  border-color: var(--accent-red);
+  background: rgba(255, 51, 102, 0.05);
+}
+
+.site-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 255, 255, 0.3);
+}
+
+.site-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.site-oee {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.3rem;
+  font-weight: 900;
+}
+
+.site-oee.healthy {
+  color: var(--accent-green);
+}
+
+.site-oee.warning {
+  color: var(--accent-amber);
+}
+
+.site-oee.critical {
+  color: var(--accent-red);
+}
+
+.site-status {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 4px;
 }
 </style>

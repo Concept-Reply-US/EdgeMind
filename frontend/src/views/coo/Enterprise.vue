@@ -67,16 +67,16 @@ async function fetchAndRender() {
     const equipmentStates = equipData.states || []
 
     const statusMap: Record<string, FactoryStatusEnterprise> = {}
-    statusList.forEach(e => {
-      statusMap[e.enterprise] = e
+    statusList.forEach((e: FactoryStatusEnterprise) => {
+      statusMap[e.name] = e
     })
 
     enterprises.value = enterpriseNames.map(name => {
       const oee = oeeMap[name]?.oee ?? null
-      const enterpriseStatus = statusMap[name] || { enterprise: name, sites: [] }
+      const enterpriseStatus = statusMap[name] || { name, sites: [] }
       const sitesArray = enterpriseStatus.sites || []
-      const sites = sitesArray.map(s => ({
-        name: s.site,
+      const sites = sitesArray.map((s: import('@/types').FactoryStatusSite) => ({
+        name: s.name,
         oee: s.oee ?? null
       }))
       const equipmentCounts = countEquipmentStates(equipmentStates, name)
