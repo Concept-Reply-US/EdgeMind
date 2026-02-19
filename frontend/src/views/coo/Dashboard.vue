@@ -62,6 +62,7 @@ interface QualityCard {
   shortName: string
   avg: string
   trend: string
+  trendArrow: string
   total: string
   status: 'good' | 'warning' | 'critical'
 }
@@ -162,14 +163,30 @@ async function refreshAll() {
 
   if (quality.status === 'fulfilled' && quality.value?.summary) {
     const summary = quality.value.summary
-    qualityCards.value = Object.entries(summary).map(([name, data]) => ({
-      name,
-      shortName: name.replace('Enterprise ', 'Ent. '),
-      avg: data.avg.toFixed(2) + '%',
-      trend: data.trend,
-      total: data.total.toFixed(0),
-      status: data.avg < 2 ? 'good' : data.avg < 5 ? 'warning' : 'critical'
-    }))
+    qualityCards.value = Object.entries(summary).map(([name, data]) => {
+      // Enterprise-specific thresholds (matching old frontend logic)
+      let status: 'good' | 'warning' | 'critical'
+      if (name === 'Enterprise C') {
+        status = data.avg < 50 ? 'good' : data.avg < 100 ? 'warning' : 'critical'
+      } else if (name === 'Enterprise B') {
+        status = data.avg < 50000 ? 'good' : data.avg < 100000 ? 'warning' : 'critical'
+      } else {
+        status = data.avg < 500000 ? 'good' : data.avg < 750000 ? 'warning' : 'critical'
+      }
+
+      // Trend arrows
+      const trendArrow = data.trend === 'rising' ? '↑' : data.trend === 'falling' ? '↓' : '→'
+
+      return {
+        name,
+        shortName: name.replace('Enterprise ', 'Ent. '),
+        avg: formatNumber(data.avg),
+        trend: data.trend,
+        trendArrow,
+        total: formatNumber(data.total),
+        status
+      }
+    })
   }
 }
 
@@ -258,6 +275,14 @@ function onSelectAnomaly(anomaly: Anomaly) {
         <BarChart :chart-data="oeeBreakdownData" :options="chartOptions" :height="280" />
       </Card>
 
+      <Card title="AI Insights" :span="6">
+        <InsightsPanel @select-anomaly="onSelectAnomaly" />
+      </Card>
+
+      <Card title="Live Data Stream" :span="6">
+        <MqttStream />
+      </Card>
+
       <Card title="Waste Trends" :span="6">
         <BarChart :chart-data="wasteTrendData" :options="chartOptions" :height="280" />
       </Card>
@@ -276,18 +301,10 @@ function onSelectAnomaly(anomaly: Anomaly) {
           >
             <div class="quality-name">{{ card.shortName }}</div>
             <div class="quality-avg">{{ card.avg }}</div>
-            <div class="quality-trend">Trend: {{ card.trend }}</div>
-            <div class="quality-total">Total: {{ card.total }}</div>
+            <div class="quality-trend">{{ card.trendArrow }} {{ card.trend }}</div>
+            <div class="quality-total">24h Total: {{ card.total }}</div>
           </div>
         </div>
-      </Card>
-
-      <Card title="AI Insights" :span="6">
-        <InsightsPanel @select-anomaly="onSelectAnomaly" />
-      </Card>
-
-      <Card title="Live Data Stream" :span="6">
-        <MqttStream />
       </Card>
     </div>
 
