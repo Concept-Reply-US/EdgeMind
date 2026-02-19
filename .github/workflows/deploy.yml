@@ -52,6 +52,12 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Build frontend
+        run: cd frontend && bun install && bun run build
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

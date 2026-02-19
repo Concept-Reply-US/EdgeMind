@@ -14,6 +14,9 @@ COPY server.js ./
 COPY lib/ ./lib/
 COPY config/ ./config/
 
+# Copy Vue frontend build output (serves via express.static)
+COPY frontend/dist/ ./
+
 # Expose the application port
 EXPOSE 3000
 
