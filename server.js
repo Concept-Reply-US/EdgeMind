@@ -2837,6 +2837,16 @@ app.post('/api/admin/clear-db', async (req, res) => {
   }
 });
 
+// SPA fallback: serve index.html for client-side routes (Vue Router)
+const path = require('path');
+app.get('*', (req, res, next) => {
+  // Skip API routes, health checks, and WebSocket upgrades
+  if (req.path.startsWith('/api') || req.path.startsWith('/health') || req.path.startsWith('/ws')) {
+    return next();
+  }
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // Start HTTP server
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
