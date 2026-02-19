@@ -2,6 +2,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import type { OEEBreakdown, FactoryStatusEnterprise } from '@/types'
 
+const loading = ref(true)
+
 interface EnterpriseColumn {
   name: string
   oee: number | null
@@ -45,21 +47,22 @@ function countEquipmentStates(states: any[], enterprise: string) {
 
 async function fetchAndRender() {
   try {
-    const [oeeRes, statusRes, equipRes] = await Promise.all([
-      fetch('/api/oee/breakdown'),
-      fetch('/api/factory/status'),
+    const [compRes, equipRes] = await Promise.all([
+      fetch('/api/enterprise/comparison'),
       fetch('/api/equipment/states')
     ])
 
-    if (!oeeRes.ok || !statusRes.ok || !equipRes.ok) {
+    if (!compRes.ok || !equipRes.ok) {
       throw new Error('Failed to fetch data')
     }
 
-    const [oeeData, statusData, equipData] = await Promise.all([
-      oeeRes.json() as Promise<{ data?: OEEBreakdown }>,
-      statusRes.json() as Promise<{ enterprises?: FactoryStatusEnterprise[] }>,
+    const [compData, equipData] = await Promise.all([
+      compRes.json() as Promise<{ oeeBreakdown?: { data?: OEEBreakdown }, factoryStatus?: { enterprises?: FactoryStatusEnterprise[] } }>,
       equipRes.json() as Promise<{ states?: any[] }>
     ])
+
+    const oeeData = compData.oeeBreakdown || {}
+    const statusData = compData.factoryStatus || {}
 
     const enterpriseNames = ['Enterprise A', 'Enterprise B', 'Enterprise C']
     const oeeMap = oeeData.data || {}
@@ -90,6 +93,8 @@ async function fetchAndRender() {
     })
   } catch (error) {
     console.error('Enterprise comparison fetch error:', error)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -111,7 +116,41 @@ onBeforeUnmount(() => {
       <h1 class="view-title">Enterprise Comparison</h1>
     </div>
 
-    <div class="enterprise-comparison-grid">
+    <!-- Skeleton shown while initial data is loading -->
+    <div v-if="loading" class="enterprise-comparison-grid">
+      <div v-for="n in 3" :key="n" class="enterprise-column skeleton-column">
+        <!-- Header -->
+        <div class="skeleton skeleton-title"></div>
+
+        <!-- OEE value block -->
+        <div class="skeleton skeleton-oee-value"></div>
+        <div class="skeleton skeleton-oee-label"></div>
+
+        <!-- Sites section -->
+        <div class="enterprise-section">
+          <div class="skeleton skeleton-section-heading"></div>
+          <div class="enterprise-sites-list">
+            <div v-for="s in 3" :key="s" class="enterprise-site-row">
+              <div class="skeleton skeleton-site-name"></div>
+              <div class="skeleton skeleton-site-oee"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Equipment section -->
+        <div class="enterprise-section">
+          <div class="skeleton skeleton-section-heading"></div>
+          <div class="equipment-state-counts">
+            <div v-for="e in 4" :key="e" class="equipment-state-item">
+              <div class="skeleton skeleton-state-count"></div>
+              <div class="skeleton skeleton-state-label"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="enterprise-comparison-grid">
       <div v-for="ent in enterprises" :key="ent.name" class="enterprise-column">
         <div class="enterprise-column-header">
           <h3 class="enterprise-name">{{ ent.name }}</h3>
@@ -349,5 +388,75 @@ onBeforeUnmount(() => {
   .enterprise-comparison-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* ── Skeleton loading ─────────────────────────────────────────── */
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.10) 50%,
+    rgba(255, 255, 255, 0.04) 75%
+  );
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Individual skeleton block dimensions — sized to mirror the real elements */
+
+.skeleton-title {
+  height: 1.1rem;
+  width: 60%;
+  margin-bottom: 16px;
+}
+
+.skeleton-oee-value {
+  height: 3rem;
+  width: 55%;
+  margin: 12px auto 4px;
+}
+
+.skeleton-oee-label {
+  height: 0.75rem;
+  width: 70%;
+  margin: 0 auto 20px;
+}
+
+.skeleton-section-heading {
+  height: 0.75rem;
+  width: 40%;
+  margin-bottom: 12px;
+}
+
+.skeleton-site-name {
+  height: 0.875rem;
+  width: 55%;
+}
+
+.skeleton-site-oee {
+  height: 0.875rem;
+  width: 20%;
+}
+
+.skeleton-state-count {
+  height: 1.5rem;
+  width: 40%;
+  margin-bottom: 6px;
+}
+
+.skeleton-state-label {
+  height: 0.7rem;
+  width: 60%;
 }
 </style>
