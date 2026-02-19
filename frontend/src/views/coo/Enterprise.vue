@@ -125,12 +125,14 @@ onBeforeUnmount(() => {
         <div class="enterprise-section">
           <h4 class="enterprise-section-title">Sites</h4>
           <div class="enterprise-sites-list">
-            <div v-if="ent.sites.length > 0" v-for="site in ent.sites" :key="site.name" class="enterprise-site-row">
-              <span class="site-name">{{ site.name }}</span>
-              <span class="site-oee" :class="getOeeClass(site.oee)">
-                {{ site.oee !== null ? site.oee.toFixed(1) + '%' : 'N/A' }}
-              </span>
-            </div>
+            <template v-if="ent.sites.length > 0">
+              <div v-for="site in ent.sites" :key="site.name" class="enterprise-site-row">
+                <span class="site-name">{{ site.name }}</span>
+                <span class="site-oee" :class="getOeeClass(site.oee)">
+                  {{ site.oee !== null ? site.oee.toFixed(1) + '%' : 'N/A' }}
+                </span>
+              </div>
+            </template>
             <div v-else class="enterprise-site-row">
               <span class="site-name" style="color: var(--text-dim);">No site data available</span>
             </div>

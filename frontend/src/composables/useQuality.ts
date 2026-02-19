@@ -53,9 +53,9 @@ export function useQuality() {
     return fetchWasteTrends(signal)
   }
 
-  async function fetchActiveSensorCount(): Promise<void> {
+  async function fetchActiveSensorCount(signal?: AbortSignal): Promise<void> {
     try {
-      const response = await fetch('/api/schema/measurements')
+      const response = await fetch('/api/schema/measurements', { signal })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const data = await response.json()
       if (data.measurements && Array.isArray(data.measurements)) {
@@ -64,6 +64,7 @@ export function useQuality() {
         })
       }
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
       console.error('Failed to fetch active sensor count:', err)
     }
   }

@@ -15,6 +15,10 @@ const chartLoading = ref({
   oeeComponents: true
 })
 
+// State for equipment data and waste prediction alerts
+const equipmentData = ref<any>(null)
+const wastePredictionAlert = ref<{ message: string; severity: 'warning' | 'critical' } | null>(null)
+
 // Chart refs
 const oeeChartCanvas = ref<HTMLCanvasElement | null>(null)
 const wasteChartCanvas = ref<HTMLCanvasElement | null>(null)
@@ -102,30 +106,114 @@ function createOEEChart(data: any) {
 
   const labels = enterprises.map(e => e.replace('Enterprise ', 'Ent. '))
 
+  // Calculate equipment state percentages per enterprise
+  const datasets: any[] = [{
+    label: 'OEE %',
+    data: oeeValues,
+    backgroundColor: oeeColors.map(c => c + '99'),
+    borderColor: oeeColors,
+    borderWidth: 2,
+    borderRadius: 6,
+    barPercentage: 0.5,
+    yAxisID: 'y'
+  }]
+
+  // Add equipment state distribution if available
+  if (equipmentData.value?.states) {
+    const statesByEnterprise = new Map<string, { running: number; idle: number; down: number; total: number }>()
+
+    equipmentData.value.states.forEach((equip: any) => {
+      if (!statesByEnterprise.has(equip.enterprise)) {
+        statesByEnterprise.set(equip.enterprise, { running: 0, idle: 0, down: 0, total: 0 })
+      }
+      const stats = statesByEnterprise.get(equip.enterprise)!
+      stats.total++
+      const stateName = (equip.stateName || equip.state || '').toLowerCase()
+      if (stateName.includes('running') || stateName.includes('operational')) {
+        stats.running++
+      } else if (stateName.includes('idle') || stateName.includes('ready') || stateName.includes('standby')) {
+        stats.idle++
+      } else {
+        stats.down++
+      }
+    })
+
+    const runningPct = enterprises.map(e => {
+      const stats = statesByEnterprise.get(e)
+      return stats ? (stats.running / stats.total * 100) : 0
+    })
+    const idlePct = enterprises.map(e => {
+      const stats = statesByEnterprise.get(e)
+      return stats ? (stats.idle / stats.total * 100) : 0
+    })
+    const downPct = enterprises.map(e => {
+      const stats = statesByEnterprise.get(e)
+      return stats ? (stats.down / stats.total * 100) : 0
+    })
+
+    datasets.push(
+      {
+        label: 'Running %',
+        data: runningPct,
+        backgroundColor: CHART_COLORS.green + '66',
+        borderColor: CHART_COLORS.green,
+        borderWidth: 1,
+        yAxisID: 'y1',
+        type: 'bar' as const,
+        stack: 'states',
+        barPercentage: 0.5
+      },
+      {
+        label: 'Idle %',
+        data: idlePct,
+        backgroundColor: CHART_COLORS.amber + '66',
+        borderColor: CHART_COLORS.amber,
+        borderWidth: 1,
+        yAxisID: 'y1',
+        type: 'bar' as const,
+        stack: 'states',
+        barPercentage: 0.5
+      },
+      {
+        label: 'Down/Faulted %',
+        data: downPct,
+        backgroundColor: CHART_COLORS.red + '66',
+        borderColor: CHART_COLORS.red,
+        borderWidth: 1,
+        yAxisID: 'y1',
+        type: 'bar' as const,
+        stack: 'states',
+        barPercentage: 0.5
+      }
+    )
+  }
+
   oeeChart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        label: 'OEE %',
-        data: oeeValues,
-        backgroundColor: oeeColors.map(c => c + '99'),
-        borderColor: oeeColors,
-        borderWidth: 2,
-        borderRadius: 6,
-        barPercentage: 0.5
-      }]
+      datasets
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false }
+        legend: {
+          display: equipmentData.value?.states ? true : false,
+          position: 'bottom',
+          labels: {
+            color: DARK_THEME.tickColor,
+            padding: 8,
+            font: { size: 10 },
+            usePointStyle: true
+          }
+        }
       },
       scales: {
         y: {
           beginAtZero: true,
           max: 100,
+          position: 'left',
           title: { display: true, text: 'OEE %', color: DARK_THEME.tickColor, font: { size: 10 } },
           grid: { color: DARK_THEME.gridColor },
           ticks: {
@@ -133,6 +221,18 @@ function createOEEChart(data: any) {
             callback: (_v: string | number) => _v + '%'
           }
         },
+        y1: equipmentData.value?.states ? {
+          beginAtZero: true,
+          max: 100,
+          position: 'right',
+          title: { display: true, text: 'Equipment State %', color: DARK_THEME.tickColor, font: { size: 10 } },
+          grid: { display: false },
+          stacked: true,
+          ticks: {
+            color: DARK_THEME.tickColor,
+            callback: (_v: string | number) => _v + '%'
+          }
+        } : undefined,
         x: {
           grid: { display: false },
           ticks: { color: DARK_THEME.tickColor }
@@ -274,6 +374,33 @@ function createWastePredictiveChart(data: any) {
 
   const ctx = canvas.getContext('2d')
   if (!ctx) return
+
+  // Check for prediction threshold alerts
+  wastePredictionAlert.value = null
+  const PREDICTION_THRESHOLD_MULTIPLIER = 1.2 // Alert if predicted > 120% of current
+  const ABSOLUTE_THRESHOLD = 100 // Alert if predicted > 100 units
+
+  Object.entries(byEnterprise).forEach(([enterprise, entData]: [string, any]) => {
+    if (!entData.historical || !entData.prediction) return
+
+    const latestHistorical = entData.historical[entData.historical.length - 1]
+    const latestPrediction = entData.prediction[entData.prediction.length - 1]
+
+    if (latestHistorical && latestPrediction) {
+      const currentValue = latestHistorical.value
+      const predictedValue = latestPrediction.value
+      const exceedsRelative = predictedValue > currentValue * PREDICTION_THRESHOLD_MULTIPLIER
+      const exceedsAbsolute = predictedValue > ABSOLUTE_THRESHOLD
+
+      if (exceedsRelative || exceedsAbsolute) {
+        const severity: 'warning' | 'critical' = exceedsAbsolute ? 'critical' : 'warning'
+        wastePredictionAlert.value = {
+          message: `${enterprise} projected waste exceeds threshold: ${predictedValue.toFixed(1)} units (current: ${currentValue.toFixed(1)})`,
+          severity
+        }
+      }
+    }
+  })
 
   const datasets = Object.entries(byEnterprise).flatMap(([enterprise, entData]: [string, any], idx: number) => {
     const colors = [CHART_COLORS.cyan, CHART_COLORS.green, CHART_COLORS.amber]
@@ -470,7 +597,7 @@ async function fetchAndRender() {
   chartLoading.value.wastePredictive = true
   chartLoading.value.oeeComponents = true
 
-  const [oeeData, wasteData, _equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
+  const [oeeData, wasteData, equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
     safeFetch('/api/oee/breakdown', 'OEE breakdown'),
     safeFetch('/api/waste/trends', 'Waste trends'),
     safeFetch('/api/equipment/states', 'Equipment states'),
@@ -478,6 +605,9 @@ async function fetchAndRender() {
     safeFetch(`/api/trends/waste-predictive?window=${selectedTimeWindow.value}&enterprise=ALL`, 'Waste predictive'),
     safeFetch(`/api/trends/oee-components?window=${selectedTimeWindow.value}&enterprise=ALL`, 'OEE components')
   ])
+
+  // Store equipment data for OEE chart to use
+  equipmentData.value = equipData
 
   if (oeeData) {
     createOEEChart(oeeData)
@@ -513,6 +643,10 @@ async function fetchAndRender() {
 function selectTimeWindow(win: string) {
   selectedTimeWindow.value = win
   fetchAndRender()
+}
+
+function dismissAlert() {
+  wastePredictionAlert.value = null
 }
 
 onMounted(() => {
@@ -593,6 +727,19 @@ onBeforeUnmount(() => {
         <div v-if="chartLoading.wastePredictive" class="chart-loading">Loading predictive data...</div>
         <div v-else-if="!wastePredictiveChart" class="chart-empty">No predictive data available</div>
         <canvas v-show="wastePredictiveChart" ref="wastePredictiveChartCanvas"></canvas>
+
+        <!-- Waste Prediction Alert Banner -->
+        <div
+          v-if="wastePredictionAlert"
+          class="waste-alert-banner"
+          :class="wastePredictionAlert.severity"
+        >
+          <div class="alert-content">
+            <span class="alert-icon">⚠️</span>
+            <span class="alert-message">{{ wastePredictionAlert.message }}</span>
+          </div>
+          <button class="alert-dismiss" @click="dismissAlert">✕</button>
+        </div>
       </div>
 
       <div class="trend-chart-container chart-card-wide">
@@ -727,6 +874,74 @@ onBeforeUnmount(() => {
   opacity: 0.5;
 }
 
+.waste-alert-banner {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-width: 1px;
+  border-style: solid;
+  animation: slideDown 0.3s ease;
+}
+
+.waste-alert-banner.warning {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+}
+
+.waste-alert-banner.critical {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+
+.alert-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+}
+
+.alert-icon {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.alert-message {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  color: #e8e8e8;
+}
+
+.alert-dismiss {
+  background: none;
+  border: none;
+  color: #999;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  line-height: 1;
+  transition: color 0.2s ease;
+  font-family: 'Share Tech Mono', monospace;
+}
+
+.alert-dismiss:hover {
+  color: #fff;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 1024px) {
   .trends-chart-grid {
     grid-template-columns: 1fr;
@@ -739,6 +954,10 @@ onBeforeUnmount(() => {
   .view-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .alert-message {
+    font-size: 0.75rem;
   }
 }
 </style>

@@ -48,8 +48,14 @@ async function save() {
     })
     if (!response.ok) throw new Error('Failed to save')
     const updated = await response.json()
-    appStore.setThresholdSettings(updated)
-    emit('close')
+
+    // Validate response before updating store
+    if (updated && typeof updated === 'object') {
+      appStore.setThresholdSettings(updated)
+      emit('close')
+    } else {
+      throw new Error('Invalid response format')
+    }
   } catch {
     errorMsg.value = 'Failed to save settings'
   } finally {

@@ -13,6 +13,7 @@ const { fetchLineOEE } = useOEE()
 
 const oeeData = ref<OEEData | null>(null)
 const lines = ref<LineOEE[]>([])
+const wasteBreakdown = ref<any>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 let refreshInterval: number | null = null
@@ -103,6 +104,47 @@ const doughnutChartOptions = computed<ChartOptions<'doughnut'>>(() => ({
   }
 }))
 
+const wasteChartData = computed<ChartData<'doughnut'>>(() => {
+  if (!wasteBreakdown.value || !wasteBreakdown.value.length) {
+    return { labels: [], datasets: [] }
+  }
+
+  // Sort by total waste descending and take top 5
+  const sorted = [...wasteBreakdown.value]
+    .sort((a: any, b: any) => (b.total || 0) - (a.total || 0))
+    .slice(0, 5)
+
+  const labels = sorted.map((item: any) => item.enterprise?.replace('Enterprise ', 'Ent. ') || 'Unknown')
+  const data = sorted.map((item: any) => item.total || 0)
+
+  const colors = ['#ef444499', '#f59e0b99', '#10b98199', '#3b82f699', '#8b5cf699']
+  const borderColors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6']
+
+  return {
+    labels,
+    datasets: [{
+      data,
+      backgroundColor: colors,
+      borderColor: borderColors,
+      borderWidth: 1
+    }]
+  }
+})
+
+const wasteChartOptions = computed<ChartOptions<'doughnut'>>(() => ({
+  plugins: {
+    legend: {
+      position: 'bottom',
+      labels: { color: '#ccc', padding: 12, font: { size: 11 } }
+    },
+    tooltip: {
+      callbacks: {
+        label: (ctx) => `${ctx.label}: ${ctx.parsed.toFixed(0)} units`
+      }
+    }
+  }
+}))
+
 async function fetchAndRender(): Promise<void> {
   try {
     error.value = null
@@ -113,9 +155,10 @@ async function fetchAndRender(): Promise<void> {
     const enterprise = appStore.enterpriseParam
     const url = enterprise !== 'ALL' ? `/api/oee/v2?enterprise=${encodeURIComponent(enterprise)}` : '/api/oee/v2'
 
-    const [oeeRes, linesData] = await Promise.all([
+    const [oeeRes, linesData, wasteRes] = await Promise.all([
       fetch(url),
-      fetchLineOEE()
+      fetchLineOEE(),
+      fetch('/api/waste/breakdown')
     ])
 
     if (!oeeRes.ok) throw new Error(`OEE v2: ${oeeRes.status}`)
@@ -124,6 +167,10 @@ async function fetchAndRender(): Promise<void> {
 
     if (linesData?.lines) {
       lines.value = linesData.lines
+    }
+
+    if (wasteRes.ok) {
+      wasteBreakdown.value = await wasteRes.json()
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load OEE data'
@@ -232,6 +279,18 @@ onBeforeUnmount(() => {
         />
         <div v-else class="view-loading">No OEE data available</div>
       </div>
+
+      <!-- Waste Breakdown Doughnut -->
+      <div class="oee-chart-container">
+        <div class="chart-title">Waste by Enterprise (24h)</div>
+        <DoughnutChart
+          v-if="wasteChartData.labels && wasteChartData.labels.length > 0"
+          :chart-data="wasteChartData"
+          :options="wasteChartOptions"
+          :height="300"
+        />
+        <div v-else class="view-loading">No waste data available</div>
+      </div>
     </div>
   </div>
 </template>
@@ -259,7 +318,7 @@ onBeforeUnmount(() => {
 .oee-drilldown-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto auto;
   gap: 20px;
   padding: 20px;
 }

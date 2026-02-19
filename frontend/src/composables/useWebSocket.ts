@@ -5,6 +5,7 @@ import { useConnectionStore } from '@/stores/connection'
 import { useNotificationStore } from '@/stores/notifications'
 import type { NotificationSeverity } from '@/stores/notifications'
 import { WS_URL } from '@/constants'
+import { useQuality } from '@/composables/useQuality'
 
 export function useWebSocket() {
   const appStore = useAppStore()
@@ -75,6 +76,10 @@ export function useWebSocket() {
     switch (message.type) {
       case 'initial_state':
         appStore.setInitialState(message.data)
+
+        // Fetch active sensor count after initial state is loaded
+        const { fetchActiveSensorCount } = useQuality()
+        fetchActiveSensorCount()
         break
 
       case 'mqtt_message': {
