@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { escapeHtml } from '@/utils'
 
 const STORAGE_KEY = 'edgemind_coo_recent_questions'
 const MAX_RECENT = 5
@@ -22,7 +23,9 @@ const suggestedQuestions = [
 
 function formatResponse(text: string): string {
   if (!text) return ''
-  return text
+  // Sanitize first to prevent XSS, then apply safe formatting
+  const safe = escapeHtml(text)
+  return safe
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>')
     .replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')

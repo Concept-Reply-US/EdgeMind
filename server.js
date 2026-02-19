@@ -6,6 +6,7 @@ if (process.env.LOG_LEVEL !== 'debug') {
   console.debug = () => {};
 }
 
+const path = require('path');
 const mqtt = require('mqtt');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 const WebSocket = require('ws');
@@ -164,7 +165,13 @@ const bedrockClient = new BedrockRuntimeClient({ region: CONFIG.bedrock.region }
 
 
 // Serve static files (frontend HTML)
-app.use(express.static(__dirname));
+// Only serve frontend build artifacts, not backend source code
+app.use('/assets', express.static(path.join(__dirname, 'assets')));
+app.use(express.static(__dirname, {
+  index: 'index.html',
+  dotfiles: 'deny',  // Block .git, .env, etc.
+  extensions: ['html']
+}));
 
 // InfluxDB client, writeApi, and queryApi are now imported from './lib/influx/client'
 
@@ -2838,7 +2845,6 @@ app.post('/api/admin/clear-db', async (req, res) => {
 });
 
 // SPA fallback: serve index.html for client-side routes (Vue Router)
-const path = require('path');
 app.get('*', (req, res, next) => {
   // Skip API routes, health checks, and WebSocket upgrades
   if (req.path.startsWith('/api') || req.path.startsWith('/health') || req.path.startsWith('/ws')) {
