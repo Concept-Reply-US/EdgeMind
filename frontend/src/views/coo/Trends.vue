@@ -1,0 +1,669 @@
+<script setup lang="ts">
+import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { Chart, registerables } from 'chart.js'
+import 'chartjs-adapter-date-fns'
+
+Chart.register(...registerables)
+
+const selectedTimeWindow = ref('shift')
+let refreshInterval: ReturnType<typeof setInterval> | null = null
+
+// Chart refs
+const oeeChartCanvas = ref<HTMLCanvasElement | null>(null)
+const wasteChartCanvas = ref<HTMLCanvasElement | null>(null)
+const downtimeChartCanvas = ref<HTMLCanvasElement | null>(null)
+const wastePredictiveChartCanvas = ref<HTMLCanvasElement | null>(null)
+const oeeComponentsChartCanvas = ref<HTMLCanvasElement | null>(null)
+
+// Chart instances
+let oeeChart: Chart | null = null
+let wasteChart: Chart | null = null
+let downtimeParetoChart: Chart | null = null
+let wastePredictiveChart: Chart | null = null
+let oeeComponentsChart: Chart | null = null
+
+const legendStateCache = new Map<string, boolean[]>()
+
+const CHART_COLORS = {
+  cyan: '#00ffff',
+  green: '#10b981',
+  amber: '#f59e0b',
+  red: '#ef4444',
+  purple: '#a78bfa',
+  blue: '#3b82f6',
+  pink: '#ec4899'
+}
+
+const DARK_THEME = {
+  gridColor: 'rgba(255, 255, 255, 0.1)',
+  tickColor: '#e8e8e8',
+  backgroundColor: 'transparent'
+}
+
+function saveLegendState(chart: Chart | null, cacheKey: string) {
+  if (!chart || !chart.data || !chart.data.datasets) return
+  const hiddenStates = chart.data.datasets.map((_, index) => {
+    const meta = chart.getDatasetMeta(index)
+    return meta ? (meta.hidden ?? false) : false
+  })
+  legendStateCache.set(cacheKey, hiddenStates)
+}
+
+function restoreLegendState(chart: Chart | null, cacheKey: string) {
+  if (!chart || !legendStateCache.has(cacheKey)) return
+  const hiddenStates = legendStateCache.get(cacheKey)
+  if (!hiddenStates) return
+
+  hiddenStates.forEach((isHidden, index) => {
+    if (index < chart.data.datasets.length) {
+      const meta = chart.getDatasetMeta(index)
+      if (meta) {
+        meta.hidden = isHidden
+      }
+    }
+  })
+  chart.update('none')
+}
+
+function destroyChart(chart: Chart | null, cacheKey: string): null {
+  if (chart && typeof chart.destroy === 'function') {
+    saveLegendState(chart, cacheKey)
+    chart.destroy()
+  }
+  return null
+}
+
+function createOEEChart(data: any) {
+  const canvas = oeeChartCanvas.value
+  if (!canvas) return
+
+  oeeChart = destroyChart(oeeChart, 'oee')
+  const oeeData = data?.data || {}
+  const enterprises = Object.keys(oeeData)
+  if (enterprises.length === 0) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const oeeValues = enterprises.map(e => oeeData[e]?.oee || 0)
+  const oeeColors = oeeValues.map(v => {
+    if (v >= 85) return CHART_COLORS.green
+    if (v >= 70) return CHART_COLORS.amber
+    return CHART_COLORS.red
+  })
+
+  const labels = enterprises.map(e => e.replace('Enterprise ', 'Ent. '))
+
+  oeeChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'OEE %',
+        data: oeeValues,
+        backgroundColor: oeeColors.map(c => c + '99'),
+        borderColor: oeeColors,
+        borderWidth: 2,
+        borderRadius: 6,
+        barPercentage: 0.5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          max: 100,
+          title: { display: true, text: 'OEE %', color: DARK_THEME.tickColor, font: { size: 10 } },
+          grid: { color: DARK_THEME.gridColor },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            callback: (_v: string | number) => _v + '%'
+          }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: DARK_THEME.tickColor }
+        }
+      }
+    }
+  })
+
+  restoreLegendState(oeeChart, 'oee')
+}
+
+function createWasteChart(data: any) {
+  const canvas = wasteChartCanvas.value
+  if (!canvas) return
+
+  wasteChart = destroyChart(wasteChart, 'waste')
+  const summary = data?.summary || {}
+  const enterprises = Object.keys(summary)
+  if (enterprises.length === 0) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const totals = enterprises.map(e => summary[e]?.total || 0)
+  const trends = enterprises.map(e => summary[e]?.trend || 'stable')
+
+  const barColors = trends.map(t => {
+    if (t === 'rising') return CHART_COLORS.red
+    if (t === 'falling') return CHART_COLORS.green
+    return CHART_COLORS.amber
+  })
+
+  wasteChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: enterprises.map(e => e.replace('Enterprise ', 'Ent. ')),
+      datasets: [{
+        label: 'Total Waste (24h)',
+        data: totals,
+        backgroundColor: barColors.map(c => c + '99'),
+        borderColor: barColors,
+        borderWidth: 2,
+        borderRadius: 6,
+        barPercentage: 0.6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: DARK_THEME.gridColor },
+          ticks: { color: DARK_THEME.tickColor }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: DARK_THEME.tickColor }
+        }
+      }
+    }
+  })
+
+  restoreLegendState(wasteChart, 'waste')
+}
+
+function createDowntimeParetoChart(data: any) {
+  const canvas = downtimeChartCanvas.value
+  if (!canvas) return
+
+  downtimeParetoChart = destroyChart(downtimeParetoChart, 'downtime')
+  const paretoData = data?.paretoData || []
+  if (paretoData.length === 0) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const topN = paretoData.slice(0, 10)
+  const labels = topN.map((d: any) => `${d.machine} (${d.site})`)
+  const values = topN.map((d: any) => d.downtimeMinutes)
+
+  downtimeParetoChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Downtime (minutes)',
+        data: values,
+        backgroundColor: values.map((_v: number, i: number) => {
+          if (i === 0) return CHART_COLORS.red + '99'
+          if (i < 3) return CHART_COLORS.amber + '99'
+          return CHART_COLORS.cyan + '99'
+        }),
+        borderColor: values.map((_v: number, i: number) => {
+          if (i === 0) return CHART_COLORS.red
+          if (i < 3) return CHART_COLORS.amber
+          return CHART_COLORS.cyan
+        }),
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { color: DARK_THEME.gridColor },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            callback: (_v: string | number) => _v + ' min'
+          }
+        },
+        y: {
+          grid: { display: false },
+          ticks: { color: DARK_THEME.tickColor, font: { size: 10 } }
+        }
+      }
+    }
+  })
+
+  restoreLegendState(downtimeParetoChart, 'downtime')
+}
+
+function createWastePredictiveChart(data: any) {
+  const canvas = wastePredictiveChartCanvas.value
+  if (!canvas) return
+
+  wastePredictiveChart = destroyChart(wastePredictiveChart, 'wastePred')
+  const byEnterprise = data?.byEnterprise || {}
+  const hasData = Object.values(byEnterprise).some((ent: any) => ent.historical && ent.historical.length > 0)
+  if (!hasData) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const datasets = Object.entries(byEnterprise).flatMap(([enterprise, entData]: [string, any], idx: number) => {
+    const colors = [CHART_COLORS.cyan, CHART_COLORS.green, CHART_COLORS.amber]
+    const historicalData = (entData.historical || []).map((d: any) => ({
+      x: new Date(d.timestamp),
+      y: d.value
+    }))
+    const predictionData = (entData.prediction || []).map((d: any) => ({
+      x: new Date(d.timestamp),
+      y: d.value
+    }))
+
+    return [
+      {
+        label: `${enterprise.replace('Enterprise ', 'Ent. ')} - Historical`,
+        data: historicalData,
+        borderColor: colors[idx % colors.length],
+        borderWidth: 2,
+        pointRadius: 2,
+        fill: false,
+        tension: 0.1
+      },
+      {
+        label: `${enterprise.replace('Enterprise ', 'Ent. ')} - Predicted`,
+        data: predictionData,
+        borderColor: colors[idx % colors.length],
+        borderWidth: 2,
+        borderDash: [8, 4],
+        pointRadius: 4,
+        pointStyle: 'triangle',
+        fill: false
+      }
+    ]
+  })
+
+  wastePredictiveChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: DARK_THEME.tickColor,
+            padding: 8,
+            font: { size: 10 },
+            usePointStyle: true
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            unit: selectedTimeWindow.value === 'hourly' ? 'minute' :
+                  selectedTimeWindow.value === 'shift' ? 'hour' :
+                  selectedTimeWindow.value === 'daily' ? 'hour' : 'day'
+          },
+          grid: { color: DARK_THEME.gridColor },
+          ticks: { color: DARK_THEME.tickColor }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: DARK_THEME.gridColor },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            callback: (_v: string | number) => _v + ' units'
+          }
+        }
+      }
+    }
+  })
+
+  restoreLegendState(wastePredictiveChart, 'wastePred')
+}
+
+function createOEEComponentsChart(data: any) {
+  const canvas = oeeComponentsChartCanvas.value
+  if (!canvas) return
+
+  oeeComponentsChart = destroyChart(oeeComponentsChart, 'oeeComp')
+  const components = ['availability', 'performance', 'quality']
+  const hasData = components.some(c => data?.[c]?.historical?.length > 0)
+  if (!hasData) return
+
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+
+  const colors: Record<string, string> = {
+    availability: CHART_COLORS.green,
+    performance: CHART_COLORS.blue,
+    quality: CHART_COLORS.amber
+  }
+
+  const datasets = components.flatMap(component => {
+    const compData = data[component]
+    if (!compData || !compData.historical || compData.historical.length === 0) return []
+
+    const historical = compData.historical.map((d: any) => ({
+      x: new Date(d.timestamp),
+      y: d.value
+    }))
+    const prediction = (compData.prediction || []).map((d: any) => ({
+      x: new Date(d.timestamp),
+      y: d.value
+    }))
+
+    return [
+      {
+        label: `${component.charAt(0).toUpperCase() + component.slice(1)} - Historical`,
+        data: historical,
+        borderColor: colors[component],
+        borderWidth: 2,
+        pointRadius: 2,
+        fill: false,
+        tension: 0.1
+      },
+      {
+        label: `${component.charAt(0).toUpperCase() + component.slice(1)} - Predicted`,
+        data: prediction,
+        borderColor: colors[component],
+        borderWidth: 2,
+        borderDash: [8, 4],
+        pointRadius: 4,
+        pointStyle: 'triangle',
+        fill: false
+      }
+    ]
+  })
+
+  oeeComponentsChart = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: DARK_THEME.tickColor,
+            padding: 8,
+            font: { size: 10 },
+            usePointStyle: true
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: {
+            unit: selectedTimeWindow.value === 'hourly' ? 'minute' :
+                  selectedTimeWindow.value === 'shift' ? 'hour' :
+                  selectedTimeWindow.value === 'daily' ? 'hour' : 'day'
+          },
+          grid: { color: DARK_THEME.gridColor },
+          ticks: { color: DARK_THEME.tickColor }
+        },
+        y: {
+          min: 0,
+          max: 100,
+          grid: { color: DARK_THEME.gridColor },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            callback: (_v: string | number) => _v + '%'
+          }
+        }
+      }
+    }
+  })
+
+  restoreLegendState(oeeComponentsChart, 'oeeComp')
+}
+
+async function safeFetch(url: string, label: string) {
+  try {
+    const res = await fetch(url)
+    if (!res.ok) throw new Error(`${label}: ${res.status}`)
+    return await res.json()
+  } catch (error) {
+    console.error(`COO trends - ${label} error:`, error)
+    return null
+  }
+}
+
+async function fetchAndRender() {
+  const [oeeData, wasteData, _equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
+    safeFetch('/api/oee/breakdown', 'OEE breakdown'),
+    safeFetch('/api/waste/trends', 'Waste trends'),
+    safeFetch('/api/equipment/states', 'Equipment states'),
+    safeFetch(`/api/trends/downtime-pareto?window=${selectedTimeWindow.value}&enterprise=ALL`, 'Downtime Pareto'),
+    safeFetch(`/api/trends/waste-predictive?window=${selectedTimeWindow.value}&enterprise=ALL`, 'Waste predictive'),
+    safeFetch(`/api/trends/oee-components?window=${selectedTimeWindow.value}&enterprise=ALL`, 'OEE components')
+  ])
+
+  if (oeeData) createOEEChart(oeeData)
+  if (wasteData) createWasteChart(wasteData)
+  if (downtimeData) createDowntimeParetoChart(downtimeData)
+  if (wastePredData) createWastePredictiveChart(wastePredData)
+  if (oeePredData) createOEEComponentsChart(oeePredData)
+}
+
+function selectTimeWindow(win: string) {
+  selectedTimeWindow.value = win
+  fetchAndRender()
+}
+
+onMounted(() => {
+  fetchAndRender()
+  refreshInterval = setInterval(fetchAndRender, 60000)
+})
+
+onBeforeUnmount(() => {
+  if (refreshInterval) clearInterval(refreshInterval)
+  oeeChart = destroyChart(oeeChart, 'oee')
+  wasteChart = destroyChart(wasteChart, 'waste')
+  downtimeParetoChart = destroyChart(downtimeParetoChart, 'downtime')
+  wastePredictiveChart = destroyChart(wastePredictiveChart, 'wastePred')
+  oeeComponentsChart = destroyChart(oeeComponentsChart, 'oeeComp')
+})
+</script>
+
+<template>
+  <div class="trends-view">
+    <div class="view-header">
+      <h1 class="view-title">Trend Analysis</h1>
+      <div class="time-window-selector">
+        <button
+          class="window-btn"
+          :class="{ active: selectedTimeWindow === 'hourly' }"
+          @click="selectTimeWindow('hourly')"
+        >
+          Hourly (1h)
+        </button>
+        <button
+          class="window-btn"
+          :class="{ active: selectedTimeWindow === 'shift' }"
+          @click="selectTimeWindow('shift')"
+        >
+          Shift (8h)
+        </button>
+        <button
+          class="window-btn"
+          :class="{ active: selectedTimeWindow === 'daily' }"
+          @click="selectTimeWindow('daily')"
+        >
+          Daily (24h)
+        </button>
+        <button
+          class="window-btn"
+          :class="{ active: selectedTimeWindow === 'weekly' }"
+          @click="selectTimeWindow('weekly')"
+        >
+          Weekly (7d)
+        </button>
+      </div>
+    </div>
+
+    <div class="trends-chart-grid">
+      <div class="trend-chart-container">
+        <h3 class="chart-title">OEE by Enterprise</h3>
+        <canvas ref="oeeChartCanvas"></canvas>
+      </div>
+
+      <div class="trend-chart-container">
+        <h3 class="chart-title">Waste Trends</h3>
+        <canvas ref="wasteChartCanvas"></canvas>
+      </div>
+
+      <div class="trend-chart-container">
+        <h3 class="chart-title">Downtime Pareto</h3>
+        <canvas ref="downtimeChartCanvas"></canvas>
+      </div>
+
+      <div class="trend-chart-container">
+        <h3 class="chart-title">Waste Predictive Analysis</h3>
+        <canvas ref="wastePredictiveChartCanvas"></canvas>
+      </div>
+
+      <div class="trend-chart-container chart-card-wide">
+        <h3 class="chart-title">OEE Components Forecast</h3>
+        <canvas ref="oeeComponentsChartCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.trends-view {
+  padding: 20px;
+}
+
+.view-header {
+  padding: 0 0 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+
+.view-title {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--persona-color, var(--accent-cyan));
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.time-window-selector {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.window-btn {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.9rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.window-btn:hover:not(.active) {
+  background: rgba(0, 255, 255, 0.08);
+  border-color: var(--accent-cyan);
+  transform: translateY(-1px);
+}
+
+.window-btn.active {
+  background: var(--accent-cyan);
+  color: var(--bg-dark);
+  border-color: var(--accent-cyan);
+  font-weight: 600;
+}
+
+.trends-chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.trend-chart-container {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  padding: 24px;
+  min-height: 300px;
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.trend-chart-container:hover {
+  border-color: var(--persona-color, var(--accent-cyan));
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.15);
+}
+
+.chart-title {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--persona-color, var(--accent-cyan));
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 16px;
+}
+
+.trend-chart-container canvas {
+  width: 100% !important;
+  max-height: 280px;
+}
+
+.chart-card-wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 1024px) {
+  .trends-chart-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chart-card-wide {
+    grid-column: auto;
+  }
+
+  .view-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+</style>

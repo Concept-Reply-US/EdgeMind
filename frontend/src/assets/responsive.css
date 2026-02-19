@@ -1,0 +1,84 @@
+/* Responsive CSS - Vue 3 Migration */
+
+@media (max-width: 1200px) {
+  /* Card component spans */
+  .card {
+    grid-column: span 6 !important;
+  }
+
+  /* Quality metrics grid */
+  .quality-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Heading sizes */
+  h1,
+  .view-title,
+  .demo-title {
+    font-size: 2rem !important;
+    letter-spacing: 4px !important;
+  }
+
+  /* Full-width cards on mobile */
+  .card {
+    grid-column: span 12 !important;
+  }
+
+  /* Factory selector buttons */
+  .factory-btn {
+    min-width: 100% !important;
+  }
+
+  /* State summary stacking */
+  .state-summary,
+  .equipment-summary-bar,
+  .metrics-bar {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  /* Equipment state grid */
+  .state-grid,
+  .equipment-grid {
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important;
+  }
+
+  /* Line OEE grid */
+  .line-oee-grid,
+  .line-status-grid {
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)) !important;
+  }
+
+  /* Quality grid single column */
+  .quality-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Quality rate font size */
+  .quality-rate,
+  .quality-avg {
+    font-size: 1.5rem !important;
+  }
+
+  /* Dashboard grid single column */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Trends chart grid single column */
+  .trends-chart-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Enterprise comparison grid single column */
+  .enterprise-comparison-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* Alerts layout single column */
+  .alerts-layout {
+    grid-template-columns: 1fr !important;
+  }
+}

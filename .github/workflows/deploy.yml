@@ -2,7 +2,7 @@ name: Deploy EdgeMind to EC2
 
 on:
   push:
-    branches: [dev, feature/persona-navbar]
+    branches: [dev, experimental]
     paths:
       - 'server.js'
       - 'lib/**'
@@ -14,6 +14,7 @@ on:
       - 'index.html'
       - 'js/**'
       - 'css/**'
+      - 'frontend/**'
   workflow_dispatch:
 
 permissions:

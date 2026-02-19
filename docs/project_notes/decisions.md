@@ -838,4 +838,72 @@ Implement four priority levels of improvements:
 
 ---
 
+### ADR-023: Vue 3 Frontend Migration with Bun Dev Tooling (2026-02-19)
+
+**Context:**
+- Vanilla JS frontend grew to ~10,500 LOC across 44 files (22 JS, 22 CSS, index.html)
+- 311 DOM manipulation calls, 78 window globals, MutationObserver pseudo-routing
+- Adding new views/modifying existing ones is increasingly fragile
+- Post-conference window (ProveIt! 2026 completed) — no deadline pressure
+
+**Decision:**
+- Migrate frontend to Vue 3 SFC architecture per existing 9-phase plan (`docs/vue-migration-todo.md`)
+- Use Bun as local dev tooling (`bun install`, `bun run dev`, `bun run build`)
+- Backend (server.js, lib/) stays on Node.js — untouched
+- Frontend deploys as built static files to S3/CloudFront (aligns with ADR-006)
+
+**Alternatives Considered:**
+- Full Stack (Vue 3 + Bun runtime) → Rejected: backend is working fine, adds unnecessary risk
+- Bun Backend First → Rejected: solves the wrong problem first (frontend is the pain)
+- Full Rewrite (Vue 3 + Elysia/Hono) → Rejected: 7-9 week scope, too ambitious for solo dev
+
+**Consequences:**
+- ✅ Reactive components eliminate 311 DOM manipulations and 78 window globals
+- ✅ Vue Router replaces MutationObserver pseudo-routing
+- ✅ Pinia stores provide typed, reactive state management
+- ✅ Scoped CSS eliminates cascade-order bugs
+- ✅ Bun provides faster dev iteration (~25x faster installs, sub-second dev server)
+- ⚠️ 3.5-4.5 weeks of migration effort with no new user-facing features
+- ⚠️ CSS scoping regressions possible (mitigated by visual comparison in Phase 7)
+- ⚠️ Two package managers in repo (Bun for frontend/, npm for root) — mitigated by directory isolation
+
+**FPF Reference:** `.fpf/decisions/DRR-003-vue3-bun-frontend-migration.md`
+
+---
+
+### ADR-024: Old Frontend Cleanup — Vanilla JS Removal (2026-02-19)
+
+**Context:**
+- Vue 3 migration (ADR-023) completed successfully in `frontend/` directory
+- Old vanilla JS frontend (22 JS files, 22 CSS files, 930-line index.html, factory-command-center.html) now obsolete
+- Old files total ~10,500 LOC with 311 DOM manipulations and 78 window globals
+- Keeping both frontends creates confusion about which is canonical
+
+**Decision:**
+- Delete old frontend files from repository root:
+  - `js/` directory (22 ES modules)
+  - `css/` directory (22 CSS files)
+  - `index.html` (old HTML entry point)
+  - `factory-command-center.html` (static mockup)
+- Update CLAUDE.md to document new Vue 3 structure
+- Backend (`lib/`, `server.js`, `config/`) remains untouched
+
+**Alternatives Considered:**
+- Keep old frontend as fallback → Rejected: maintenance burden, no need for fallback after successful migration
+- Archive to `legacy/` directory → Rejected: files are in git history, no need for dead code in working tree
+
+**Consequences:**
+- ✅ Single source of truth for frontend (Vue 3 in `frontend/`)
+- ✅ Reduced repository size and complexity
+- ✅ No confusion about which frontend to modify
+- ✅ Git history preserves old implementation if needed
+- ⚠️ Cannot run old frontend without checking out previous commit
+
+**Implementation:**
+- Deleted via `rm -rf js/ css/` and `rm index.html factory-command-center.html`
+- Updated CLAUDE.md Frontend Files section with Vue 3 structure
+- Backend tests still pass (frontend deletion doesn't affect `lib/`)
+
+---
+
 <!-- Add new decisions above this line -->

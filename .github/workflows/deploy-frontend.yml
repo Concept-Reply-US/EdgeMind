@@ -4,10 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'index.html'
-      - 'css/**'
-      - 'js/**'
-      - 'assets/**'
+      - 'frontend/**'
   workflow_dispatch:
 
 permissions:
@@ -28,6 +25,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install frontend dependencies
+        run: cd frontend && bun install
+
+      - name: Build frontend
+        run: cd frontend && bun run build
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -36,13 +42,7 @@ jobs:
 
       - name: Sync frontend to S3
         run: |
-          aws s3 sync ./ s3://${{ env.S3_BUCKET }}/ \
-            --exclude '*' \
-            --include 'index.html' \
-            --include 'css/*' \
-            --include 'js/*' \
-            --include 'assets/*' \
-            --delete
+          aws s3 sync frontend/dist/ s3://${{ env.S3_BUCKET }}/ --delete
 
       - name: Invalidate CloudFront cache
         run: |

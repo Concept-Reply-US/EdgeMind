@@ -14,7 +14,7 @@ MQTT Broker (virtualfactory.proveit.services:1883)
 Node.js Server (server.js)
     ├── Writes all numeric data to InfluxDB
     ├── Throttled WebSocket broadcast (every 10th message)
-    └── Agentic Loop (every 30 seconds):
+    └── Agentic Loop (tiered):
             ↓
         Queries InfluxDB (5-minute rolling window, 1-min aggregates)
             ↓
@@ -22,14 +22,13 @@ Node.js Server (server.js)
             ↓
         Broadcasts insights via WebSocket
             ↓
-Frontend (index.html) ← WebSocket (port 3000, /ws path)
+Vue 3 Frontend (frontend/) ← WebSocket (dev: port 5173 proxied, prod: /ws path)
 ```
 
 **Key Components:**
 - `server.js` - Backend entry point: HTTP routes, MQTT handling, WebSocket server, Claude agentic loop
 - `lib/` - Modular backend code (see Backend Modules below)
-- `index.html` - Live dashboard with WebSocket connection to backend
-- `factory-command-center.html` - Static mockup version (no backend connection)
+- `frontend/` - Vue 3 SPA with TypeScript, Pinia stores, Vue Router (see Frontend section below)
 
 ## Backend Modules (lib/)
 
@@ -83,61 +82,53 @@ lib/
 - `cesmii/demo-publisher.js` - Depends on: config
 - `cesmii/routes.js` - Depends on: config, state, validation
 
-## Frontend Files
+## Frontend (Vue 3 SPA)
+
+The frontend is a Vue 3 + TypeScript SPA built with Vite and managed with Bun.
 
 ```
-index.html           # HTML structure, loads CSS and JS modules
-css/                 # Modular CSS (22 files)
-├── variables.css    # CSS custom properties, persona themes
-├── base.css         # Reset, body, grid/scanline backgrounds
-├── animations.css   # All @keyframes
-├── layout.css       # Grid, persona-view system
-├── command-bar.css  # Top nav, persona chips, sub-nav
-├── cards.css        # Card styles, expand/maximize
-├── metrics.css      # Metric values, factory selectors
-├── stream.css       # Live MQTT stream display
-├── ai-agent.css     # Insights panel, anomaly filters
-├── scorecard.css    # OEE gauges, health status
-├── equipment.css    # Equipment state monitors
-├── batch.css        # Batch operations, cleanroom zones
-├── quality.css      # Quality metrics panels
-├── charts.css       # Chart panels, heatmaps
-├── connection.css   # Connection status indicators
-├── modals.css       # All modal overlays
-├── chat.css         # Chat panel
-├── demo.css         # Demo control UI
-├── coo-views.css    # COO persona view styles
-├── plant-views.css  # Plant Manager persona view styles
-├── cesmii.css       # CESMII work order panel styles
-├── footer.css       # Footer branding
-└── responsive.css   # Media queries
-js/                  # ES modules (22 files)
-├── app.js           # Entry point: imports all, exposes window globals, init
-├── state.js         # Shared state objects and constants
-├── utils.js         # escapeHtml, formatMs, utility functions
-├── persona.js       # Persona switching, sub-nav, keyboard shortcuts
-├── websocket.js     # WebSocket connection, message dispatch
-├── charts.js        # Chart.js initialization and updates
-├── dashboard-data.js # All data fetching (OEE, equipment, batch, etc.)
-├── dashboard-render.js # DOM rendering and update functions
-├── insights.js      # Claude insights panel, anomaly filtering
-├── stream.js        # MQTT message stream display
-├── modals.js        # All modal dialogs
-├── chat.js          # Chat panel functionality
-├── coo-enterprise.js # COO: Enterprise comparison view
-├── coo-trends.js    # COO: Trend analysis with Chart.js charts
-├── coo-agent.js     # COO: Agent Q&A with POST /api/agent/chat
-├── plant-line-status.js    # Plant Mgr: Line status grid
-├── plant-oee-drilldown.js  # Plant Mgr: OEE gauge + charts
-├── plant-equipment.js      # Plant Mgr: Filterable equipment grid
-├── plant-alerts.js         # Plant Mgr: Alerts + CMMS work orders
-├── cesmii.js             # Plant Mgr: CESMII work orders + SM Profiles
-├── demo-scenarios.js # Demo scenario launcher
-├── demo-inject.js   # Anomaly injection controls
-└── demo-timer.js    # Reset controls, presentation timer
+frontend/
+├── src/
+│   ├── main.ts              # App entry point
+│   ├── App.vue              # Root component (shell + WebSocket + theme)
+│   ├── router/index.ts      # Vue Router with 11 lazy-loaded routes
+│   ├── types/index.ts       # All TypeScript interfaces
+│   ├── constants.ts         # WS_URL, sleeping agent messages
+│   ├── utils/index.ts       # Utility functions
+│   ├── stores/              # Pinia stores
+│   │   ├── app.ts           # Main state (messages, insights, OEE, equipment)
+│   │   ├── connection.ts    # WebSocket connection state
+│   │   ├── persona.ts       # Active persona/view
+│   │   └── demo.ts          # Demo scenarios/timer
+│   ├── composables/         # Vue composables
+│   │   ├── useWebSocket.ts  # WebSocket with exponential backoff
+│   │   ├── useApi.ts        # Typed fetch wrapper
+│   │   ├── useOEE.ts        # OEE data fetching
+│   │   ├── useEquipment.ts  # Equipment state fetching
+│   │   ├── useQuality.ts    # Quality metrics fetching
+│   │   └── useKeyboardShortcuts.ts
+│   ├── components/          # Shared components
+│   │   ├── CommandBar.vue   # Top nav, persona chips, sub-nav
+│   │   ├── Footer.vue       # Branding
+│   │   ├── charts/          # Chart.js wrappers (OEEGauge, Bar, Line, Doughnut)
+│   │   ├── ui/              # Card, Modal
+│   │   ├── modals/          # AnomalyModal, SettingsModal
+│   │   ├── insights/        # InsightsPanel
+│   │   ├── stream/          # MqttStream
+│   │   └── chat/            # ChatPanel (SSE streaming)
+│   ├── views/               # Route views
+│   │   ├── coo/             # Dashboard, Enterprise, Trends, Agent
+│   │   ├── plant/           # LineStatus, OEEDrilldown, Equipment, Alerts
+│   │   └── demo/            # Scenarios, Inject, Timer
+│   └── assets/              # CSS (variables, base, animations, responsive)
+├── package.json             # Vue 3.5, Pinia 3, vue-router 5, vue-chartjs 5
+├── vite.config.ts           # Vite config with API/WS proxy
+└── tsconfig*.json           # TypeScript configs
 ```
 
 ## Commands
+
+### Backend Commands
 
 ```bash
 # Install dependencies
@@ -148,6 +139,9 @@ npm start
 
 # Start with auto-reload (development)
 npm run dev
+
+# Run backend tests
+npm test
 
 # Start InfluxDB (Docker required)
 docker run -d --name influxdb -p 8086:8086 \
@@ -170,6 +164,24 @@ curl http://localhost:3000/api/schema/hierarchy
 
 # Query schema measurements
 curl http://localhost:3000/api/schema/measurements
+```
+
+### Frontend Commands (Vue 3 + Bun)
+
+```bash
+cd frontend
+
+# Install dependencies
+bun install
+
+# Start dev server (port 5173, proxies to backend :3000)
+bun run dev
+
+# Type-check + production build to dist/
+bun run build
+
+# Preview production build
+bun run preview
 ```
 
 ## API Endpoints
