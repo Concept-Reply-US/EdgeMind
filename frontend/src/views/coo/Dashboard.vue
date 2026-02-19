@@ -12,11 +12,17 @@ import InsightsPanel from '@/components/insights/InsightsPanel.vue'
 import MqttStream from '@/components/stream/MqttStream.vue'
 import AnomalyModal from '@/components/modals/AnomalyModal.vue'
 import { formatNumber } from '@/utils'
-import type { Anomaly, ChartData, ChartOptions, FactoryStatusEnterprise } from '@/types'
+import type {
+  Anomaly,
+  ChartData,
+  ChartOptions,
+  FactoryStatusEnterprise,
+  BatchStatusResponse
+} from '@/types'
 
 const appStore = useAppStore()
 const connectionStore = useConnectionStore()
-const { fetchOEE, fetchOEEBreakdown, fetchFactoryStatus } = useOEE()
+const { fetchOEE, fetchOEEBreakdown, fetchFactoryStatus, fetchBatchStatus } = useOEE()
 const { fetchWasteTrends, fetchScrapByLine, fetchQualityMetrics, fetchActiveSensorCount } = useQuality()
 const { fetchEquipmentStates } = useEquipment()
 
@@ -25,6 +31,15 @@ const oeeStatus = ref('')
 const showAnomalyModal = ref(false)
 const selectedAnomaly = ref<Anomaly | null>(null)
 const factoryStatus = ref<{ enterprises?: FactoryStatusEnterprise[] }>({ enterprises: [] })
+
+// Chart click detail state
+const chartDetailPopup = ref<{
+  show: boolean
+  label: string
+  value: number
+  percentage: string
+  chartType: string
+} | null>(null)
 
 // Chart data refs
 const oeeBreakdownData = ref<ChartData<'bar'>>({
@@ -71,6 +86,10 @@ interface QualityCard {
 }
 
 const qualityCards = ref<QualityCard[]>([])
+const batchStatus = ref<BatchStatusResponse | null>(null)
+
+// AbortController for canceling in-flight requests
+let abortController: AbortController | null = null
 
 // Factory selector
 const factories = [
@@ -119,17 +138,27 @@ const equipmentSummary = computed(() => {
 })
 
 async function refreshAll() {
-  const [oeeResult, breakdownResult, wasteTrends, scrapByLine, quality, factoryStatusResult] = await Promise.allSettled([
-    fetchOEE(),
-    fetchOEEBreakdown(),
-    fetchWasteTrends(),
-    fetchScrapByLine(),
-    fetchQualityMetrics(),
-    fetchFactoryStatus()
+  // Abort previous in-flight requests
+  if (abortController) {
+    abortController.abort()
+  }
+
+  // Create new AbortController for this refresh
+  abortController = new AbortController()
+  const signal = abortController.signal
+
+  const [oeeResult, breakdownResult, wasteTrends, scrapByLine, quality, factoryStatusResult, batchResult] = await Promise.allSettled([
+    fetchOEE(signal),
+    fetchOEEBreakdown(signal),
+    fetchWasteTrends(signal),
+    fetchScrapByLine(signal),
+    fetchQualityMetrics(signal),
+    fetchFactoryStatus(signal),
+    fetchBatchStatus(signal)
   ])
 
-  fetchEquipmentStates()
-  fetchActiveSensorCount()
+  fetchEquipmentStates(signal)
+  fetchActiveSensorCount(signal)
 
   if (oeeResult.status === 'fulfilled' && oeeResult.value) {
     const data = oeeResult.value
@@ -224,6 +253,10 @@ async function refreshAll() {
   if (factoryStatusResult.status === 'fulfilled' && factoryStatusResult.value) {
     factoryStatus.value = factoryStatusResult.value
   }
+
+  if (batchResult.status === 'fulfilled' && batchResult.value) {
+    batchStatus.value = batchResult.value
+  }
 }
 
 const chartOptions: ChartOptions<'bar'> = {
@@ -254,11 +287,54 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (refreshInterval) clearInterval(refreshInterval)
+  if (abortController) abortController.abort()
 })
 
 function onSelectAnomaly(anomaly: Anomaly) {
   selectedAnomaly.value = anomaly
   showAnomalyModal.value = true
+}
+
+function handleWasteClick(payload: { label: string; value: number }) {
+  const dataset = wasteTrendData.value.datasets[0]
+  if (!dataset) return
+  const total = dataset.data.reduce((sum: number, v) => sum + ((v as number) || 0), 0)
+  const percentage = total > 0 ? ((payload.value / total) * 100).toFixed(1) : '0'
+
+  chartDetailPopup.value = {
+    show: true,
+    label: payload.label,
+    value: payload.value,
+    percentage: percentage + '%',
+    chartType: 'Waste'
+  }
+}
+
+function handleScrapClick(payload: { label: string; value: number }) {
+  const dataset = scrapData.value.datasets[0]
+  if (!dataset) return
+  const total = dataset.data.reduce((sum: number, v) => sum + ((v as number) || 0), 0)
+  const percentage = total > 0 ? ((payload.value / total) * 100).toFixed(1) : '0'
+
+  chartDetailPopup.value = {
+    show: true,
+    label: payload.label,
+    value: payload.value,
+    percentage: percentage + '%',
+    chartType: 'Scrap'
+  }
+}
+
+function closeChartDetail() {
+  chartDetailPopup.value = null
+}
+
+function getStateClass(state: string): string {
+  const stateLower = state.toLowerCase()
+  if (stateLower.includes('run')) return 'state-running'
+  if (stateLower.includes('complete') || stateLower.includes('done')) return 'state-complete'
+  if (stateLower.includes('fault') || stateLower.includes('error') || stateLower.includes('alarm')) return 'state-fault'
+  return 'state-idle'
 }
 </script>
 
@@ -340,11 +416,11 @@ function onSelectAnomaly(anomaly: Anomaly) {
       </Card>
 
       <Card title="Waste Trends" :span="6">
-        <BarChart :chart-data="wasteTrendData" :options="chartOptions" :height="280" />
+        <BarChart :chart-data="wasteTrendData" :options="chartOptions" :height="280" @chart-click="handleWasteClick" />
       </Card>
 
       <Card title="Scrap by Line" :span="6">
-        <BarChart :chart-data="scrapData" :options="chartOptions" :height="280" />
+        <BarChart :chart-data="scrapData" :options="chartOptions" :height="280" @chart-click="handleScrapClick" />
       </Card>
 
       <Card title="Production Heatmap" :span="12">
@@ -396,9 +472,120 @@ function onSelectAnomaly(anomaly: Anomaly) {
           </div>
         </div>
       </Card>
+
+      <Card title="Batch Operations (Enterprise C)" :span="12">
+        <div v-if="!batchStatus || !batchStatus.equipment || batchStatus.equipment.length === 0" class="batch-empty">
+          No active batches
+        </div>
+        <div v-else>
+          <!-- Batch Summary Bar -->
+          <div class="batch-summary">
+            <div class="batch-summary-item">
+              <span class="batch-count batch-running">{{ batchStatus.summary?.running || 0 }}</span>
+              <span class="batch-label">Running</span>
+            </div>
+            <div class="batch-summary-item">
+              <span class="batch-count batch-idle">{{ batchStatus.summary?.idle || 0 }}</span>
+              <span class="batch-label">Idle</span>
+            </div>
+            <div class="batch-summary-item">
+              <span class="batch-count batch-complete">{{ batchStatus.summary?.complete || 0 }}</span>
+              <span class="batch-label">Complete</span>
+            </div>
+            <div class="batch-summary-item">
+              <span class="batch-count batch-fault">{{ batchStatus.summary?.fault || 0 }}</span>
+              <span class="batch-label">Fault</span>
+            </div>
+            <div class="batch-summary-item">
+              <span class="batch-count batch-total">{{ batchStatus.summary?.total || 0 }}</span>
+              <span class="batch-label">Total</span>
+            </div>
+          </div>
+
+          <!-- Batch Equipment Grid -->
+          <div class="batch-grid">
+            <div
+              v-for="equipment in batchStatus.equipment"
+              :key="equipment.id"
+              class="batch-equipment-card"
+            >
+              <div class="batch-equipment-header">
+                <div class="batch-equipment-name">{{ equipment.name }}</div>
+                <div class="batch-equipment-type">{{ equipment.type }}</div>
+              </div>
+              <div class="batch-equipment-body">
+                <div class="batch-equipment-row">
+                  <span class="batch-equipment-label">State:</span>
+                  <span class="batch-equipment-value" :class="getStateClass(equipment.state)">{{ equipment.state }}</span>
+                </div>
+                <div v-if="equipment.phase" class="batch-equipment-row">
+                  <span class="batch-equipment-label">Phase:</span>
+                  <span class="batch-equipment-value">{{ equipment.phase }}</span>
+                </div>
+                <div v-if="equipment.batchId" class="batch-equipment-row">
+                  <span class="batch-equipment-label">Batch ID:</span>
+                  <span class="batch-equipment-value batch-id">{{ equipment.batchId }}</span>
+                </div>
+                <div v-if="equipment.recipe" class="batch-equipment-row">
+                  <span class="batch-equipment-label">Recipe:</span>
+                  <span class="batch-equipment-value">{{ equipment.recipe }}</span>
+                </div>
+              </div>
+              <div class="batch-equipment-footer">
+                <span class="batch-equipment-site">{{ equipment.site }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cleanroom Zones (if available) -->
+          <div v-if="batchStatus.cleanroom && batchStatus.cleanroom.length > 0" class="cleanroom-section">
+            <div class="cleanroom-header">Cleanroom Environmental Zones</div>
+            <div class="cleanroom-grid">
+              <div
+                v-for="zone in batchStatus.cleanroom"
+                :key="zone.name"
+                class="cleanroom-zone-card"
+                :class="`cleanroom-${(zone.status || 'Good').toLowerCase()}`"
+              >
+                <div class="cleanroom-zone-name">{{ zone.name }}</div>
+                <div class="cleanroom-zone-metrics">
+                  <div v-if="zone.temperature != null" class="cleanroom-metric">
+                    <span class="cleanroom-metric-label">Temp:</span>
+                    <span class="cleanroom-metric-value">{{ zone.temperature.toFixed(1) }}°C</span>
+                  </div>
+                  <div v-if="zone.humidity != null" class="cleanroom-metric">
+                    <span class="cleanroom-metric-label">Humidity:</span>
+                    <span class="cleanroom-metric-value">{{ zone.humidity.toFixed(1) }}%</span>
+                  </div>
+                  <div v-if="zone.pm25 != null" class="cleanroom-metric">
+                    <span class="cleanroom-metric-label">PM2.5:</span>
+                    <span class="cleanroom-metric-value">{{ zone.pm25.toFixed(2) }}</span>
+                  </div>
+                </div>
+                <div v-if="zone.status" class="cleanroom-zone-status" :class="`cleanroom-${zone.status.toLowerCase()}`">
+                  {{ zone.status }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
     </div>
 
     <AnomalyModal :show="showAnomalyModal" :anomaly="selectedAnomaly" @close="showAnomalyModal = false" />
+
+    <!-- Chart Detail Popup -->
+    <div v-if="chartDetailPopup?.show" class="chart-detail-overlay" @click="closeChartDetail">
+      <div class="chart-detail-card" @click.stop>
+        <button class="chart-detail-close" @click="closeChartDetail">&times;</button>
+        <div class="chart-detail-header">{{ chartDetailPopup.chartType }} Details</div>
+        <div class="chart-detail-body">
+          <div class="chart-detail-label">{{ chartDetailPopup.label }}</div>
+          <div class="chart-detail-value">{{ formatNumber(chartDetailPopup.value) }} units</div>
+          <div class="chart-detail-percentage">{{ chartDetailPopup.percentage }} of total</div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -785,5 +972,398 @@ function onSelectAnomaly(anomaly: Anomaly) {
   text-transform: uppercase;
   letter-spacing: 1px;
   margin-top: 4px;
+}
+
+/* Chart Detail Popup */
+.chart-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+
+.chart-detail-card {
+  background: var(--bg-card);
+  border: 2px solid var(--accent-cyan);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 90%;
+  position: relative;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+.chart-detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.8rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.2s ease;
+}
+
+.chart-detail-close:hover {
+  color: var(--accent-red);
+}
+
+.chart-detail-header {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 20px;
+}
+
+.chart-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-detail-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-detail-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--accent-cyan);
+  text-shadow: var(--glow-cyan);
+}
+
+.chart-detail-percentage {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1rem;
+  color: var(--text-dim);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Batch Operations Styles */
+.batch-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100px;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+}
+
+.batch-summary {
+  display: flex;
+  gap: 15px;
+  margin-bottom: 20px;
+  justify-content: space-around;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  backdrop-filter: blur(10px);
+}
+
+.batch-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.batch-count {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.3rem;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 6px;
+  min-width: 45px;
+  text-align: center;
+}
+
+.batch-running {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.batch-idle {
+  color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.batch-complete {
+  color: var(--accent-cyan);
+  background: rgba(0, 255, 255, 0.15);
+}
+
+.batch-fault {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.batch-total {
+  color: var(--accent-magenta);
+  background: rgba(255, 0, 255, 0.15);
+}
+
+.batch-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.batch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.batch-equipment-card {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.batch-equipment-card:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 15px rgba(0, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.batch-equipment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.batch-equipment-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.batch-equipment-type {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.batch-equipment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.batch-equipment-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.batch-equipment-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.batch-equipment-value {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.batch-equipment-value.state-running {
+  color: var(--accent-green);
+  font-weight: 700;
+}
+
+.batch-equipment-value.state-complete {
+  color: var(--accent-cyan);
+  font-weight: 700;
+}
+
+.batch-equipment-value.state-fault {
+  color: var(--accent-red);
+  font-weight: 700;
+}
+
+.batch-equipment-value.state-idle {
+  color: var(--accent-amber);
+  font-weight: 700;
+}
+
+.batch-equipment-value.batch-id {
+  font-family: 'Orbitron', sans-serif;
+  color: var(--accent-magenta);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+
+.batch-equipment-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.batch-equipment-site {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.cleanroom-section {
+  margin-top: 25px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.cleanroom-header {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  margin-bottom: 15px;
+  letter-spacing: 1px;
+}
+
+.cleanroom-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.cleanroom-zone-card {
+  background: rgba(0, 0, 0, 0.4);
+  border: 2px solid;
+  border-radius: 8px;
+  padding: 15px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.cleanroom-zone-card.cleanroom-good {
+  border-color: var(--accent-green);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.cleanroom-zone-card.cleanroom-warning {
+  border-color: var(--accent-amber);
+  background: rgba(255, 191, 0, 0.05);
+}
+
+.cleanroom-zone-card.cleanroom-critical {
+  border-color: var(--accent-red);
+  background: rgba(255, 51, 102, 0.05);
+}
+
+.cleanroom-zone-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 255, 255, 0.2);
+}
+
+.cleanroom-zone-name {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+}
+
+.cleanroom-zone-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.cleanroom-metric {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cleanroom-metric-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.cleanroom-metric-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+}
+
+.cleanroom-zone-status {
+  text-align: center;
+  padding: 6px;
+  border-radius: 4px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.cleanroom-zone-status.cleanroom-good {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-green);
+}
+
+.cleanroom-zone-status.cleanroom-warning {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+}
+
+.cleanroom-zone-status.cleanroom-critical {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--accent-red);
 }
 </style>

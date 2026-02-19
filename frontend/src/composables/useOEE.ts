@@ -1,5 +1,5 @@
 import { useAppStore } from '@/stores/app'
-import type { OEEData, OEEBreakdown, FactoryStatusEnterprise, LineOEE } from '@/types'
+import type { OEEData, OEEBreakdown, FactoryStatusEnterprise, LineOEE, BatchStatusResponse } from '@/types'
 
 export function useOEE() {
   const appStore = useAppStore()
@@ -49,7 +49,8 @@ export function useOEE() {
     try {
       const enterprise = appStore.enterpriseParam
       if (enterprise === 'Enterprise C') {
-        return fetchBatchStatus(signal)
+        // Enterprise C uses batch processing, return empty lines
+        return { lines: [] }
       }
       const response = await fetch('/api/oee/lines', { signal })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -65,10 +66,14 @@ export function useOEE() {
     }
   }
 
-  async function fetchBatchStatus(signal?: AbortSignal): Promise<{ lines?: LineOEE[] } | null> {
+  async function fetchBatchStatus(signal?: AbortSignal): Promise<BatchStatusResponse | null> {
     try {
       const response = await fetch('/api/batch/status', { signal })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.ok) {
+        // Gracefully handle 404 or other errors
+        if (response.status === 404) return null
+        throw new Error(`HTTP ${response.status}`)
+      }
       return await response.json()
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return null

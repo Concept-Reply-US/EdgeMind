@@ -15,6 +15,8 @@ export interface Insight {
   demoScenario?: string
   enterprise?: string
   insightsEnabled?: boolean
+  model?: string
+  confidence?: string | number
 }
 
 export interface Anomaly {
@@ -136,6 +138,43 @@ export interface QualitySummary {
     total: number
     trend: 'rising' | 'falling' | 'stable'
   }
+}
+
+export interface BatchEquipment {
+  id: string
+  name: string
+  type: string
+  site: string
+  state: string
+  phase?: string | null
+  batchId?: string | null
+  recipe?: string | null
+  lastUpdate?: string
+}
+
+export interface BatchSummary {
+  running: number
+  idle: number
+  complete: number
+  fault: number
+  total: number
+}
+
+export interface CleanroomZone {
+  name: string
+  temperature?: number | null
+  humidity?: number | null
+  pm25?: number | null
+  fanStatus?: string | null
+  status?: 'Good' | 'Warning' | 'Critical'
+  issues?: string[]
+  lastUpdate?: string
+}
+
+export interface BatchStatusResponse {
+  equipment?: BatchEquipment[]
+  summary?: BatchSummary
+  cleanroom?: CleanroomZone[]
 }
 
 export type PersonaType = 'coo' | 'plant' | 'demo'

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick, onMounted } from 'vue'
+import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
 import { escapeHtml } from '@/utils'
 
@@ -9,6 +9,8 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const input = ref('')
 const sending = ref(false)
 const showWelcome = ref(true)
+const showScrollButton = ref(false)
+const unreadCount = ref(0)
 
 interface ChatMessage {
   id: string
@@ -19,6 +21,8 @@ interface ChatMessage {
 
 const messages = ref<ChatMessage[]>([])
 const chatHistory = ref<Array<{ role: string; content: string }>>([])
+
+let abortController: AbortController | null = null
 
 const suggestedQuestions = [
   "What is impacting Enterprise B's OEE?",
@@ -94,9 +98,18 @@ async function sendMessage() {
   await nextTick()
   scrollToBottom()
 
+  // Track unread messages if user scrolled up
+  if (showScrollButton.value) {
+    unreadCount.value++
+  }
+
   const assistantIndex = messages.value.length - 1
 
   try {
+    // Abort any previous request
+    if (abortController) abortController.abort()
+    abortController = new AbortController()
+
     const response = await fetch('/api/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -104,7 +117,8 @@ async function sendMessage() {
         prompt,
         sessionId: connectionStore.chatSessionId || crypto.randomUUID(),
         messages: chatHistory.value.slice(0, -1)
-      })
+      }),
+      signal: abortController.signal
     })
 
     if (!response.ok) throw new Error('Chat failed')
@@ -151,7 +165,13 @@ async function sendMessage() {
         messages.value[assistantIndex] = { ...msg, role: 'assistant', content: streamText, streaming: true }
       }
       await nextTick()
-      scrollToBottom()
+
+      // Auto-scroll only if user is at bottom, otherwise increment unread
+      if (!showScrollButton.value) {
+        scrollToBottom()
+      } else {
+        unreadCount.value++
+      }
     }
 
     const msg = messages.value[assistantIndex]
@@ -164,7 +184,10 @@ async function sendMessage() {
     if (chatHistory.value.length > 20) {
       chatHistory.value.splice(0, chatHistory.value.length - 20)
     }
-  } catch {
+  } catch (err) {
+    // Handle abort gracefully without showing error
+    if (err instanceof DOMException && err.name === 'AbortError') return
+
     const msg = messages.value[assistantIndex]
     if (msg) {
       messages.value[assistantIndex] = { ...msg, role: 'assistant', content: 'Error: Could not reach assistant', streaming: false }
@@ -177,6 +200,27 @@ async function sendMessage() {
 function scrollToBottom() {
   if (messagesRef.value) {
     messagesRef.value.scrollTop = messagesRef.value.scrollHeight
+    unreadCount.value = 0
+  }
+}
+
+function checkScrollPosition() {
+  if (!messagesRef.value) return
+
+  const container = messagesRef.value
+  const scrollTop = container.scrollTop
+  const scrollHeight = container.scrollHeight
+  const clientHeight = container.clientHeight
+  const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+  // Show button if user is more than 50px from bottom
+  showScrollButton.value = distanceFromBottom > 50
+}
+
+function handleScroll() {
+  checkScrollPosition()
+  if (!showScrollButton.value) {
+    unreadCount.value = 0
   }
 }
 
@@ -198,6 +242,10 @@ onMounted(() => {
   if (!connectionStore.chatSessionId) {
     connectionStore.chatSessionId = crypto.randomUUID()
   }
+})
+
+onBeforeUnmount(() => {
+  if (abortController) abortController.abort()
 })
 </script>
 
@@ -223,7 +271,7 @@ onMounted(() => {
         </div>
 
         <div class="chat-body">
-          <div ref="messagesRef" class="chat-messages">
+          <div ref="messagesRef" class="chat-messages" @scroll="handleScroll">
             <!-- Welcome -->
             <div v-if="showWelcome" class="chat-welcome">
               <svg class="chat-welcome-icon" viewBox="0 0 24 24">
@@ -252,6 +300,21 @@ onMounted(() => {
             >
               <div class="bubble" v-html="formatMarkdown(msg.content || '...')"></div>
             </div>
+
+            <!-- Scroll to Bottom Button -->
+            <Transition name="scroll-btn">
+              <button
+                v-if="showScrollButton"
+                class="scroll-to-bottom"
+                @click="scrollToBottom"
+                title="Scroll to bottom"
+              >
+                <span v-if="unreadCount > 0" class="unread-badge">{{ unreadCount }}</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 14l-7 7m0 0l-7-7m7 7V3"/>
+                </svg>
+              </button>
+            </Transition>
           </div>
 
           <!-- Input Area -->
@@ -365,6 +428,7 @@ onMounted(() => {
 }
 
 .chat-messages {
+  position: relative;
   flex: 1;
   overflow-y: auto;
   padding: 10px;
@@ -547,5 +611,65 @@ onMounted(() => {
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
+}
+
+/* Scroll to Bottom Button */
+.scroll-to-bottom {
+  position: absolute;
+  bottom: 15px;
+  right: 15px;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 2px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 10px rgba(0, 255, 255, 0.3);
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.scroll-to-bottom:hover {
+  background: rgba(0, 255, 255, 0.2);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.6), 0 0 15px rgba(0, 255, 255, 0.5);
+  transform: translateY(-2px);
+}
+
+.scroll-to-bottom svg {
+  width: 20px;
+  height: 20px;
+}
+
+.unread-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: var(--accent-red);
+  color: white;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  font-family: 'Rajdhani', sans-serif;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.scroll-btn-enter-active,
+.scroll-btn-leave-active {
+  transition: all 0.3s ease;
+}
+
+.scroll-btn-enter-from,
+.scroll-btn-leave-to {
+  opacity: 0;
+  transform: scale(0.5) translateY(20px);
 }
 </style>

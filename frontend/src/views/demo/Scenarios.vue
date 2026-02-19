@@ -48,7 +48,7 @@ async function loadScenarios() {
 
 async function updateScenarioStatus() {
   try {
-    const response = await fetch('/api/demo/status')
+    const response = await fetch('/api/demo/scenario/status')
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}: ${response.statusText}`)
     }
@@ -61,9 +61,10 @@ async function updateScenarioStatus() {
 
 async function launchScenario(scenarioId: string) {
   try {
-    const response = await fetch(`/api/demo/scenarios/${scenarioId}/start`, {
+    const response = await fetch('/api/demo/scenario/launch', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenarioId })
     })
 
     if (!response.ok) {
@@ -84,7 +85,7 @@ async function stopScenario() {
   try {
     if (!scenarioStatus.value.scenario?.id) return
 
-    const response = await fetch(`/api/demo/scenarios/${scenarioStatus.value.scenario.id}/stop`, {
+    const response = await fetch('/api/demo/scenario/stop', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })

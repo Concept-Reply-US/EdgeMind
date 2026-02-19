@@ -1,16 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { Chart, registerables } from 'chart.js'
 import 'chartjs-adapter-date-fns'
 import { useAppStore } from '@/stores/app'
+import { useProcessData } from '@/composables/useProcessData'
+import type { SPCMeasurement, SPCData } from '@/composables/useProcessData'
 
 Chart.register(...registerables)
 
 const appStore = useAppStore()
+const processData = useProcessData()
 
 // Refs for time window selection
-const selectedTimeWindow = ref('5m')
+const selectedTimeWindow = ref('shift')
 const loading = ref(false)
+const isRefreshing = ref(false)
+
+// SPC measurement selection
+const availableMeasurements = ref<SPCMeasurement[]>([])
+const selectedMeasurement = ref<string>('')
+const availableSites = ref<string[]>([])
+const selectedSite = ref<string>('ALL')
 
 // Chart canvas refs
 const spcChartCanvas = ref<HTMLCanvasElement | null>(null)
@@ -22,6 +32,7 @@ let spcChart: Chart | null = null
 let energyChart: Chart | null = null
 let productionChart: Chart | null = null
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+let currentAbortController: AbortController | null = null
 
 const legendStateCache = new Map<string, boolean[]>()
 
@@ -46,7 +57,29 @@ const spcEmpty = ref(false)
 const energyEmpty = ref(false)
 const productionEmpty = ref(false)
 
+// Current SPC data
+const currentSPCData = ref<SPCData | null>(null)
+
 const enterprise = computed(() => appStore.enterpriseParam)
+
+// Computed Cpk value for display
+const cpkValue = computed(() => {
+  return currentSPCData.value?.statistics?.cpk ?? 0
+})
+
+const cpkStatus = computed(() => {
+  const cpk = cpkValue.value
+  if (cpk >= 1.33) return 'excellent'
+  if (cpk >= 1.0) return 'adequate'
+  return 'poor'
+})
+
+const cpkColor = computed(() => {
+  const status = cpkStatus.value
+  if (status === 'excellent') return CHART_COLORS.green
+  if (status === 'adequate') return CHART_COLORS.amber
+  return CHART_COLORS.red
+})
 
 function saveLegendState(chart: Chart | null, cacheKey: string) {
   if (!chart || !chart.data || !chart.data.datasets) return
@@ -81,199 +114,129 @@ function destroyChart(chart: Chart | null, cacheKey: string): null {
   return null
 }
 
-interface TrendDataPoint {
-  timestamp: string
-  mean?: number
-  min?: number
-  max?: number
-  count?: number
-}
-
-interface MeasurementData {
-  [key: string]: TrendDataPoint[]
-}
-
-interface TrendsResponse {
-  data: {
-    [enterprise: string]: {
-      [site: string]: {
-        [area: string]: {
-          [machine: string]: MeasurementData
-        }
-      }
-    }
-  }
-}
-
 /**
- * Calculate UCL/LCL from data (mean ± 3*stddev)
+ * Create SPC control chart with UCL/LCL from backend data
  */
-function calculateControlLimits(values: number[]) {
-  if (values.length === 0) return { mean: 0, ucl: 0, lcl: 0, stddev: 0 }
-  const mean = values.reduce((a, b) => a + b, 0) / values.length
-  const variance = values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length
-  const stddev = Math.sqrt(variance)
-  const ucl = mean + 3 * stddev
-  const lcl = mean - 3 * stddev
-  return { mean, ucl, lcl, stddev }
-}
-
-/**
- * Extract measurements from trends API response
- */
-function extractMeasurements(data: TrendsResponse['data']): Array<{ name: string; values: number[]; timestamps: string[] }> {
-  const measurements: Array<{ name: string; values: number[]; timestamps: string[] }> = []
-
-  for (const [ent, sites] of Object.entries(data)) {
-    for (const [site, areas] of Object.entries(sites)) {
-      for (const [area, machines] of Object.entries(areas)) {
-        for (const [machine, meas] of Object.entries(machines)) {
-          for (const [measName, points] of Object.entries(meas)) {
-            const values: number[] = []
-            const timestamps: string[] = []
-
-            for (const pt of points) {
-              if (pt.mean !== undefined) {
-                values.push(pt.mean)
-                timestamps.push(pt.timestamp)
-              }
-            }
-
-            if (values.length > 0) {
-              measurements.push({
-                name: `${ent}/${site}/${area}/${machine}/${measName}`,
-                values,
-                timestamps
-              })
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return measurements
-}
-
-/**
- * Filter measurements by keyword patterns
- */
-function filterMeasurements(measurements: ReturnType<typeof extractMeasurements>, keywords: string[]): ReturnType<typeof extractMeasurements> {
-  return measurements.filter(m => {
-    const nameLower = m.name.toLowerCase()
-    return keywords.some(kw => nameLower.includes(kw.toLowerCase()))
-  })
-}
-
-/**
- * Create SPC control chart with UCL/LCL
- */
-function createSPCChart(measurements: ReturnType<typeof extractMeasurements>) {
+async function createSPCChart() {
   const canvas = spcChartCanvas.value
   if (!canvas) return
 
   spcChart = destroyChart(spcChart, 'spc')
 
-  // Pick quality/process measurements (temperature, pressure, thickness, weight, etc.)
-  const qualityKeywords = ['temperature', 'pressure', 'thickness', 'weight', 'diameter', 'length', 'width', 'height', 'humidity', 'ph', 'viscosity', 'density']
-  const qualityMeasurements = filterMeasurements(measurements, qualityKeywords)
-
-  if (qualityMeasurements.length === 0) {
+  if (!selectedMeasurement.value || enterprise.value === 'ALL') {
     spcEmpty.value = true
     return
   }
 
-  spcEmpty.value = false
+  const signal = currentAbortController?.signal
+  const data = await processData.fetchSPCData(
+    selectedMeasurement.value,
+    enterprise.value,
+    selectedTimeWindow.value,
+    selectedSite.value !== 'ALL' ? selectedSite.value : undefined,
+    signal
+  )
 
-  // Use first 3 measurements for chart
-  const topMeasurements = qualityMeasurements.slice(0, 3)
+  if (!data || !data.data || data.data.length === 0) {
+    spcEmpty.value = true
+    currentSPCData.value = null
+    return
+  }
+
+  spcEmpty.value = false
+  currentSPCData.value = data
+
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  const colors = [CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.green]
+  const { controlLimits } = data
   const datasets: any[] = []
 
-  topMeasurements.forEach((m, idx) => {
-    const limits = calculateControlLimits(m.values)
-    const color = colors[idx % colors.length]
+  // Create datasets for each series (if multiple sources)
+  if (data.series && data.series.length > 0) {
+    const colors = [CHART_COLORS.cyan, CHART_COLORS.purple, CHART_COLORS.green]
 
-    // Data line
+    data.series.forEach((series, idx) => {
+      const color = colors[idx % colors.length]
+
+      // Main data line
+      datasets.push({
+        label: series.source || `Series ${idx + 1}`,
+        data: series.data.map(point => ({
+          x: new Date(point.timestamp),
+          y: point.value
+        })),
+        borderColor: color,
+        borderWidth: 2,
+        pointRadius: series.data.map(point => point.outOfControl ? 6 : 3),
+        pointBackgroundColor: series.data.map(point =>
+          point.outOfControl ? CHART_COLORS.red : color
+        ),
+        fill: false,
+        tension: 0.1
+      })
+    })
+  } else {
+    // Single series from flat data
     datasets.push({
-      label: m.name.split('/').slice(-2).join('/'),
-      data: m.values.map((val, i) => ({
-        x: new Date(m.timestamps[i] || Date.now()),
-        y: val
+      label: data.measurement.split('_').join(' '),
+      data: data.data.map(point => ({
+        x: new Date(point.timestamp),
+        y: point.value
       })),
-      borderColor: color,
+      borderColor: CHART_COLORS.cyan,
       borderWidth: 2,
-      pointRadius: m.values.map(val => {
-        // Highlight out-of-control points
-        return (val > limits.ucl || val < limits.lcl) ? 6 : 3
-      }),
-      pointBackgroundColor: m.values.map(val => {
-        return (val > limits.ucl || val < limits.lcl) ? CHART_COLORS.red : color
-      }),
+      pointRadius: data.data.map(point => point.outOfControl ? 6 : 3),
+      pointBackgroundColor: data.data.map(point =>
+        point.outOfControl ? CHART_COLORS.red : CHART_COLORS.cyan
+      ),
       fill: false,
-      tension: 0.1,
-      yAxisID: `y${idx}`
+      tension: 0.1
     })
+  }
 
-    // Control limit lines
-    const minTime = new Date(m.timestamps[0] || Date.now())
-    const maxTime = new Date(m.timestamps[m.timestamps.length - 1] || Date.now())
+  // Control limit lines
+  const timestamps = data.data.map(d => new Date(d.timestamp))
+  const minTime = timestamps[0] || new Date()
+  const maxTime = timestamps[timestamps.length - 1] || new Date()
 
-    datasets.push({
-      label: `UCL (${m.name.split('/').slice(-1)[0]})`,
-      data: [
-        { x: minTime, y: limits.ucl },
-        { x: maxTime, y: limits.ucl }
-      ],
-      borderColor: CHART_COLORS.red,
-      borderWidth: 1,
-      borderDash: [5, 5],
-      pointRadius: 0,
-      fill: false,
-      yAxisID: `y${idx}`
-    })
-
-    datasets.push({
-      label: `Mean (${m.name.split('/').slice(-1)[0]})`,
-      data: [
-        { x: minTime, y: limits.mean },
-        { x: maxTime, y: limits.mean }
-      ],
-      borderColor: color,
-      borderWidth: 1,
-      borderDash: [3, 3],
-      pointRadius: 0,
-      fill: false,
-      yAxisID: `y${idx}`
-    })
-
-    datasets.push({
-      label: `LCL (${m.name.split('/').slice(-1)[0]})`,
-      data: [
-        { x: minTime, y: limits.lcl },
-        { x: maxTime, y: limits.lcl }
-      ],
-      borderColor: CHART_COLORS.red,
-      borderWidth: 1,
-      borderDash: [5, 5],
-      pointRadius: 0,
-      fill: false,
-      yAxisID: `y${idx}`
-    })
+  datasets.push({
+    label: 'UCL',
+    data: [
+      { x: minTime, y: controlLimits.ucl },
+      { x: maxTime, y: controlLimits.ucl }
+    ],
+    borderColor: CHART_COLORS.red,
+    borderWidth: 1,
+    borderDash: [5, 5],
+    pointRadius: 0,
+    fill: false
   })
 
-  const yAxes: any = {}
-  topMeasurements.forEach((_m, idx) => {
-    yAxes[`y${idx}`] = {
-      type: 'linear',
-      display: idx === 0, // Only show first y-axis
-      position: idx === 0 ? 'left' : 'right',
-      grid: { color: idx === 0 ? DARK_THEME.gridColor : 'transparent' },
-      ticks: { color: DARK_THEME.tickColor }
-    }
+  datasets.push({
+    label: 'Mean',
+    data: [
+      { x: minTime, y: controlLimits.mean },
+      { x: maxTime, y: controlLimits.mean }
+    ],
+    borderColor: CHART_COLORS.green,
+    borderWidth: 1,
+    borderDash: [3, 3],
+    pointRadius: 0,
+    fill: false
+  })
+
+  datasets.push({
+    label: 'LCL',
+    data: [
+      { x: minTime, y: controlLimits.lcl },
+      { x: maxTime, y: controlLimits.lcl }
+    ],
+    borderColor: CHART_COLORS.red,
+    borderWidth: 1,
+    borderDash: [5, 5],
+    pointRadius: 0,
+    fill: false
   })
 
   spcChart = new Chart(ctx, {
@@ -288,11 +251,20 @@ function createSPCChart(measurements: ReturnType<typeof extractMeasurements>) {
           labels: {
             color: DARK_THEME.tickColor,
             padding: 8,
-            font: { size: 9 },
+            font: { size: 10 },
             usePointStyle: true,
             filter: (item) => {
-              // Only show main data lines in legend, not control limits
-              return !item.text.startsWith('UCL') && !item.text.startsWith('LCL') && !item.text.startsWith('Mean')
+              // Show series names and control limits
+              return !item.text.startsWith('Series')
+            }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const value = ctx.parsed.y ?? 0
+              const label = ctx.dataset.label || ''
+              return `${label}: ${value.toFixed(3)}`
             }
           }
         }
@@ -304,7 +276,10 @@ function createSPCChart(measurements: ReturnType<typeof extractMeasurements>) {
           grid: { color: DARK_THEME.gridColor },
           ticks: { color: DARK_THEME.tickColor }
         },
-        ...yAxes
+        y: {
+          grid: { color: DARK_THEME.gridColor },
+          ticks: { color: DARK_THEME.tickColor }
+        }
       }
     }
   })
@@ -313,49 +288,49 @@ function createSPCChart(measurements: ReturnType<typeof extractMeasurements>) {
 }
 
 /**
- * Create energy monitoring chart
+ * Create energy monitoring chart from production/energy API
  */
-function createEnergyChart(measurements: ReturnType<typeof extractMeasurements>) {
+async function createEnergyChart() {
   const canvas = energyChartCanvas.value
   if (!canvas) return
 
   energyChart = destroyChart(energyChart, 'energy')
 
-  const energyKeywords = ['power', 'energy', 'current', 'voltage', 'watt', 'consumption', 'kw', 'kwh', 'ampere', 'volt']
-  const energyMeasurements = filterMeasurements(measurements, energyKeywords)
+  const signal = currentAbortController?.signal
+  const data = await processData.fetchEnergyConsumption(selectedTimeWindow.value, signal)
 
-  if (energyMeasurements.length === 0) {
+  if (!data || !data.byLine || data.byLine.length === 0) {
     energyEmpty.value = true
     return
   }
 
   energyEmpty.value = false
 
-  const topMeasurements = energyMeasurements.slice(0, 5)
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  const colors = [CHART_COLORS.cyan, CHART_COLORS.green, CHART_COLORS.amber, CHART_COLORS.purple, CHART_COLORS.pink]
-  const datasets = topMeasurements.map((m, idx) => ({
-    label: m.name.split('/').slice(-3).join('/'),
-    data: m.values.map((val, i) => ({
-      x: new Date(m.timestamps[i] || Date.now()).getTime(),
-      y: val
-    })),
-    borderColor: colors[idx],
-    backgroundColor: colors[idx] + '20',
-    borderWidth: 2,
-    pointRadius: 2,
-    fill: true,
-    tension: 0.4
-  }))
-
-  // Calculate current values (last point)
-  const currentValues = topMeasurements.map(m => m.values[m.values.length - 1] || 0)
+  // Create bar chart showing consumption by line
+  const labels = data.byLine.map(line => line.line)
+  const consumption = data.byLine.map(line => line.consumption)
+  const trendColors = data.byLine.map(line => {
+    if (line.trend === 'rising') return CHART_COLORS.red
+    if (line.trend === 'falling') return CHART_COLORS.green
+    return CHART_COLORS.amber
+  })
 
   energyChart = new Chart(ctx, {
-    type: 'line',
-    data: { datasets } as any,
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: `Energy (${data.summary.unit})`,
+        data: consumption,
+        backgroundColor: trendColors.map(c => c + '99'),
+        borderColor: trendColors,
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -372,19 +347,26 @@ function createEnergyChart(measurements: ReturnType<typeof extractMeasurements>)
         tooltip: {
           callbacks: {
             label: (ctx) => {
-              const current = currentValues[ctx.datasetIndex] ?? 0
-              const yValue = ctx.parsed.y ?? 0
-              return `${ctx.dataset.label}: ${yValue.toFixed(2)} (current: ${current.toFixed(2)})`
+              const value = ctx.parsed.y ?? 0
+              const line = data.byLine[ctx.dataIndex]
+              if (!line) return `${value.toFixed(1)} ${data.summary.unit}`
+              return [
+                `${value.toFixed(1)} ${data.summary.unit}`,
+                `Trend: ${line.trend}`
+              ]
             }
           }
         }
       },
       scales: {
         x: {
-          type: 'time',
-          time: { unit: 'minute' },
-          grid: { color: DARK_THEME.gridColor },
-          ticks: { color: DARK_THEME.tickColor }
+          grid: { display: false },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            font: { size: 9 },
+            maxRotation: 45,
+            minRotation: 45
+          }
         },
         y: {
           beginAtZero: true,
@@ -399,73 +381,100 @@ function createEnergyChart(measurements: ReturnType<typeof extractMeasurements>)
 }
 
 /**
- * Create production volume chart
+ * Create production volume chart showing actual vs target
  */
-function createProductionChart(measurements: ReturnType<typeof extractMeasurements>) {
+async function createProductionChart() {
   const canvas = productionChartCanvas.value
   if (!canvas) return
 
   productionChart = destroyChart(productionChart, 'production')
 
-  const productionKeywords = ['count', 'production', 'throughput', 'output', 'batch', 'units', 'quantity', 'volume', 'pieces', 'items']
-  const productionMeasurements = filterMeasurements(measurements, productionKeywords)
+  const signal = currentAbortController?.signal
+  const data = await processData.fetchProductionVolume(selectedTimeWindow.value, signal)
 
-  if (productionMeasurements.length === 0) {
+  if (!data || !data.byLine || data.byLine.length === 0) {
     productionEmpty.value = true
     return
   }
 
   productionEmpty.value = false
 
-  const topMeasurements = productionMeasurements.slice(0, 5)
   const ctx = canvas.getContext('2d')
   if (!ctx) return
 
-  // Calculate totals for each measurement
-  const labels = topMeasurements.map(m => m.name.split('/').slice(-3).join('/'))
-  const totals = topMeasurements.map(m => m.values.reduce((sum, val) => sum + val, 0))
+  const labels = data.byLine.map(line => line.line)
+  const actual = data.byLine.map(line => line.actual)
+  const target = data.byLine.map(line => line.target)
 
-  const colors = totals.map((total) => {
-    const avg = totals.reduce((a, b) => a + b, 0) / totals.length
-    if (total > avg * 1.2) return CHART_COLORS.green
-    if (total < avg * 0.8) return CHART_COLORS.red
-    return CHART_COLORS.amber
+  const actualColors = data.byLine.map(line => {
+    if (line.status === 'on-target') return CHART_COLORS.green
+    if (line.status === 'near-target') return CHART_COLORS.amber
+    return CHART_COLORS.red
   })
 
   productionChart = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
-      datasets: [{
-        label: 'Total Production',
-        data: totals,
-        backgroundColor: colors.map(c => c + '99'),
-        borderColor: colors,
-        borderWidth: 2,
-        borderRadius: 6
-      }]
+      datasets: [
+        {
+          label: 'Actual',
+          data: actual,
+          backgroundColor: actualColors.map(c => c + '99'),
+          borderColor: actualColors,
+          borderWidth: 2,
+          borderRadius: 6
+        },
+        {
+          label: 'Target',
+          data: target,
+          backgroundColor: CHART_COLORS.blue + '33',
+          borderColor: CHART_COLORS.blue,
+          borderWidth: 1,
+          borderRadius: 6
+        }
+      ]
     },
     options: {
-      indexAxis: 'y',
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { display: false },
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: DARK_THEME.tickColor,
+            padding: 8,
+            font: { size: 10 },
+            usePointStyle: true
+          }
+        },
         tooltip: {
           callbacks: {
-            label: (ctx) => `Total: ${(ctx.parsed.x ?? 0).toFixed(0)} units`
+            label: (ctx) => {
+              const line = data.byLine[ctx.dataIndex]
+              if (!line) return ''
+              if (ctx.datasetIndex === 0) {
+                return `Actual: ${line.actual} (${line.percentOfTarget}% of target)`
+              }
+              return `Target: ${line.target}`
+            }
           }
         }
       },
       scales: {
         x: {
+          grid: { display: false },
+          ticks: {
+            color: DARK_THEME.tickColor,
+            font: { size: 9 },
+            maxRotation: 45,
+            minRotation: 45
+          }
+        },
+        y: {
           beginAtZero: true,
           grid: { color: DARK_THEME.gridColor },
           ticks: { color: DARK_THEME.tickColor }
-        },
-        y: {
-          grid: { display: false },
-          ticks: { color: DARK_THEME.tickColor, font: { size: 9 } }
         }
       }
     }
@@ -474,36 +483,87 @@ function createProductionChart(measurements: ReturnType<typeof extractMeasuremen
   restoreLegendState(productionChart, 'production')
 }
 
-async function safeFetch(url: string, label: string) {
-  try {
-    const res = await fetch(url)
-    if (!res.ok) throw new Error(`${label}: ${res.status}`)
-    return await res.json()
-  } catch (error) {
-    console.error(`Plant Process Trends - ${label} error:`, error)
-    return null
+async function loadSPCMeasurements() {
+  if (enterprise.value === 'ALL') {
+    availableMeasurements.value = []
+    selectedMeasurement.value = ''
+    return
+  }
+
+  const signal = currentAbortController?.signal
+  const measurements = await processData.fetchSPCMeasurements(
+    enterprise.value,
+    10,
+    selectedSite.value !== 'ALL' ? selectedSite.value : undefined,
+    signal
+  )
+
+  if (measurements && measurements.length > 0) {
+    availableMeasurements.value = measurements
+    // Auto-select first measurement if none selected
+    const first = measurements[0]
+    if (!selectedMeasurement.value || !measurements.find(m => m.measurement === selectedMeasurement.value)) {
+      selectedMeasurement.value = first?.measurement ?? ''
+    }
+  } else {
+    availableMeasurements.value = []
+    selectedMeasurement.value = ''
+  }
+}
+
+async function loadSPCSites() {
+  if (enterprise.value === 'ALL') {
+    availableSites.value = []
+    selectedSite.value = 'ALL'
+    return
+  }
+
+  const signal = currentAbortController?.signal
+  const sites = await processData.fetchSPCSites(enterprise.value, signal)
+  if (sites && sites.length > 0) {
+    availableSites.value = sites
+  } else {
+    availableSites.value = []
+    selectedSite.value = 'ALL'
   }
 }
 
 async function fetchAndRender() {
+  // Abort any in-flight requests
+  if (currentAbortController) {
+    currentAbortController.abort()
+  }
+  currentAbortController = new AbortController()
+
+  isRefreshing.value = true
   loading.value = true
 
-  // Reset empty states
-  spcEmpty.value = false
-  energyEmpty.value = false
-  productionEmpty.value = false
+  try {
+    // Reset empty states
+    spcEmpty.value = false
+    energyEmpty.value = false
+    productionEmpty.value = false
 
-  const trendsData = await safeFetch('/api/trends', 'Trends data')
+    // Load SPC sites and measurements
+    await loadSPCSites()
+    await loadSPCMeasurements()
 
-  if (trendsData && trendsData.data) {
-    const measurements = extractMeasurements(trendsData.data)
-
-    createSPCChart(measurements)
-    createEnergyChart(measurements)
-    createProductionChart(measurements)
+    // Render all charts
+    await Promise.all([
+      createSPCChart(),
+      createEnergyChart(),
+      createProductionChart()
+    ])
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      // Request was aborted, this is expected
+      return
+    }
+    console.error('Error in fetchAndRender:', err)
+  } finally {
+    loading.value = false
+    isRefreshing.value = false
   }
-
-  loading.value = false
 }
 
 function selectTimeWindow(window: string) {
@@ -511,12 +571,28 @@ function selectTimeWindow(window: string) {
   fetchAndRender()
 }
 
+// Watch for measurement or site changes
+watch([selectedMeasurement, selectedSite], () => {
+  if (selectedMeasurement.value && !isRefreshing.value) {
+    createSPCChart()
+  }
+})
+
+// Watch for enterprise changes
+watch(enterprise, () => {
+  fetchAndRender()
+})
+
 onMounted(() => {
   fetchAndRender()
   refreshInterval = setInterval(fetchAndRender, 30000)
 })
 
 onBeforeUnmount(() => {
+  // Abort any in-flight requests
+  if (currentAbortController) {
+    currentAbortController.abort()
+  }
   if (refreshInterval) clearInterval(refreshInterval)
   spcChart = destroyChart(spcChart, 'spc')
   energyChart = destroyChart(energyChart, 'energy')
@@ -531,31 +607,31 @@ onBeforeUnmount(() => {
       <div class="time-window-selector">
         <button
           class="window-btn"
-          :class="{ active: selectedTimeWindow === '5m' }"
-          @click="selectTimeWindow('5m')"
+          :class="{ active: selectedTimeWindow === 'hourly' }"
+          @click="selectTimeWindow('hourly')"
         >
-          5 min
+          Hourly
         </button>
         <button
           class="window-btn"
-          :class="{ active: selectedTimeWindow === '15m' }"
-          @click="selectTimeWindow('15m')"
+          :class="{ active: selectedTimeWindow === 'shift' }"
+          @click="selectTimeWindow('shift')"
         >
-          15 min
+          Shift
         </button>
         <button
           class="window-btn"
-          :class="{ active: selectedTimeWindow === '1h' }"
-          @click="selectTimeWindow('1h')"
+          :class="{ active: selectedTimeWindow === 'daily' }"
+          @click="selectTimeWindow('daily')"
         >
-          1 hour
+          Daily
         </button>
         <button
           class="window-btn"
-          :class="{ active: selectedTimeWindow === '4h' }"
-          @click="selectTimeWindow('4h')"
+          :class="{ active: selectedTimeWindow === 'weekly' }"
+          @click="selectTimeWindow('weekly')"
         >
-          4 hours
+          Weekly
         </button>
       </div>
     </div>
@@ -571,23 +647,60 @@ onBeforeUnmount(() => {
 
     <div class="trends-grid">
       <!-- SPC Control Charts -->
-      <div class="trend-card">
+      <div class="trend-card spc-card">
         <h3 class="card-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"/>
             <line x1="5" y1="12" x2="19" y2="12"/>
             <circle cx="12" cy="12" r="3"/>
           </svg>
-          SPC Control Charts
+          SPC Control Chart
         </h3>
         <p class="card-subtitle">Statistical process control with UCL/LCL limits</p>
-        <div v-if="spcEmpty" class="empty-state">
+
+        <div v-if="enterprise !== 'ALL'" class="spc-controls">
+          <div class="control-group">
+            <label>Site Filter:</label>
+            <select v-model="selectedSite" class="site-select">
+              <option value="ALL">All Sites</option>
+              <option v-for="site in availableSites" :key="site" :value="site">
+                {{ site }}
+              </option>
+            </select>
+          </div>
+
+          <div class="control-group">
+            <label>Measurement:</label>
+            <select v-model="selectedMeasurement" class="measurement-select">
+              <option v-for="m in availableMeasurements" :key="m.measurement" :value="m.measurement">
+                {{ m.displayName }}
+              </option>
+            </select>
+          </div>
+
+          <div v-if="cpkValue > 0" class="cpk-badge" :style="{ borderColor: cpkColor, color: cpkColor }">
+            <span class="cpk-label">Cpk:</span>
+            <span class="cpk-value">{{ cpkValue.toFixed(2) }}</span>
+            <span class="cpk-status">({{ cpkStatus }})</span>
+          </div>
+        </div>
+
+        <div v-if="enterprise === 'ALL'" class="empty-state">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p>Please select a specific enterprise to view SPC data</p>
+        </div>
+
+        <div v-else-if="spcEmpty" class="empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <p>No quality/process measurements available</p>
+          <p>No SPC data available for selected measurement</p>
         </div>
         <canvas v-else ref="spcChartCanvas"></canvas>
       </div>
@@ -598,16 +711,16 @@ onBeforeUnmount(() => {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
           </svg>
-          Energy Monitoring
+          Energy Consumption
         </h3>
-        <p class="card-subtitle">Real-time power consumption and current values</p>
+        <p class="card-subtitle">Energy consumption by production line</p>
         <div v-if="energyEmpty" class="empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <p>No energy measurements available</p>
+          <p>No energy data available</p>
         </div>
         <canvas v-else ref="energyChartCanvas"></canvas>
       </div>
@@ -620,16 +733,16 @@ onBeforeUnmount(() => {
             <line x1="9" y1="9" x2="15" y2="9"/>
             <line x1="9" y1="15" x2="15" y2="15"/>
           </svg>
-          Production Volume
+          Production Volume vs Target
         </h3>
-        <p class="card-subtitle">Total production counts and throughput</p>
+        <p class="card-subtitle">Actual production compared to targets</p>
         <div v-if="productionEmpty" class="empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
             <line x1="12" y1="9" x2="12" y2="13"/>
             <line x1="12" y1="17" x2="12.01" y2="17"/>
           </svg>
-          <p>No production measurements available</p>
+          <p>No production data available</p>
         </div>
         <canvas v-else ref="productionChartCanvas"></canvas>
       </div>
@@ -765,6 +878,10 @@ onBeforeUnmount(() => {
   box-shadow: 0 0 20px rgba(0, 255, 136, 0.15);
 }
 
+.spc-card {
+  min-height: 550px;
+}
+
 .card-title {
   display: flex;
   align-items: center;
@@ -792,9 +909,92 @@ onBeforeUnmount(() => {
   padding-left: 30px;
 }
 
+.spc-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.control-group label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.site-select,
+.measurement-select {
+  padding: 6px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: var(--text-primary);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.measurement-select {
+  min-width: 250px;
+}
+
+.site-select:hover,
+.measurement-select:hover {
+  border-color: var(--accent-green);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.site-select:focus,
+.measurement-select:focus {
+  outline: none;
+  border-color: var(--accent-green);
+  box-shadow: 0 0 10px rgba(0, 255, 136, 0.2);
+}
+
+.cpk-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 2px solid;
+  border-radius: 6px;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  margin-left: auto;
+}
+
+.cpk-label {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.cpk-value {
+  font-size: 1.2rem;
+}
+
+.cpk-status {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
 .trend-card canvas {
   width: 100% !important;
   max-height: 320px;
+}
+
+.spc-card canvas {
+  max-height: 380px;
 }
 
 .empty-state {
@@ -804,6 +1004,10 @@ onBeforeUnmount(() => {
   justify-content: center;
   height: 320px;
   color: var(--text-dim);
+}
+
+.spc-card .empty-state {
+  height: 380px;
 }
 
 .empty-state svg {
@@ -817,6 +1021,7 @@ onBeforeUnmount(() => {
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.9rem;
   margin: 0;
+  text-align: center;
 }
 
 @media (min-width: 1024px) {
@@ -843,6 +1048,25 @@ onBeforeUnmount(() => {
   .window-btn {
     flex: 1;
     min-width: 80px;
+  }
+
+  .spc-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .control-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .measurement-select {
+    min-width: auto;
+    width: 100%;
+  }
+
+  .cpk-badge {
+    margin-left: 0;
   }
 }
 </style>

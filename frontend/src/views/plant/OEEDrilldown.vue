@@ -18,6 +18,18 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 let refreshInterval: number | null = null
 
+// AbortController for canceling in-flight requests
+let abortController: AbortController | null = null
+
+// Chart click detail state
+const chartDetailPopup = ref<{
+  show: boolean
+  label: string
+  value: number
+  percentage: string
+  chartType: string
+} | null>(null)
+
 function getOeeColor(value: number): string {
   if (value >= 85) return '#10b981'
   if (value >= 70) return '#f59e0b'
@@ -152,13 +164,22 @@ async function fetchAndRender(): Promise<void> {
       loading.value = true
     }
 
+    // Abort previous in-flight requests
+    if (abortController) {
+      abortController.abort()
+    }
+
+    // Create new AbortController for this fetch
+    abortController = new AbortController()
+    const signal = abortController.signal
+
     const enterprise = appStore.enterpriseParam
     const url = enterprise !== 'ALL' ? `/api/oee/v2?enterprise=${encodeURIComponent(enterprise)}` : '/api/oee/v2'
 
     const [oeeRes, linesData, wasteRes] = await Promise.all([
-      fetch(url),
-      fetchLineOEE(),
-      fetch('/api/waste/breakdown')
+      fetch(url, { signal }),
+      fetchLineOEE(signal),
+      fetch('/api/waste/breakdown', { signal })
     ])
 
     if (!oeeRes.ok) throw new Error(`OEE v2: ${oeeRes.status}`)
@@ -173,6 +194,10 @@ async function fetchAndRender(): Promise<void> {
       wasteBreakdown.value = await wasteRes.json()
     }
   } catch (err) {
+    // Ignore AbortError (user navigated away or switched filters)
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      return
+    }
     error.value = err instanceof Error ? err.message : 'Failed to load OEE data'
     console.error('OEE drilldown fetch error:', err)
   } finally {
@@ -190,7 +215,29 @@ onBeforeUnmount(() => {
     clearInterval(refreshInterval)
     refreshInterval = null
   }
+  if (abortController) {
+    abortController.abort()
+  }
 })
+
+function handleWasteClick(payload: { label: string; value: number }) {
+  const dataset = wasteChartData.value.datasets[0]
+  if (!dataset) return
+  const total = dataset.data.reduce((sum: number, v) => sum + ((v as number) || 0), 0)
+  const percentage = total > 0 ? ((payload.value / total) * 100).toFixed(1) : '0'
+
+  chartDetailPopup.value = {
+    show: true,
+    label: payload.label,
+    value: payload.value,
+    percentage: percentage + '%',
+    chartType: 'Waste'
+  }
+}
+
+function closeChartDetail() {
+  chartDetailPopup.value = null
+}
 </script>
 
 <template>
@@ -288,8 +335,22 @@ onBeforeUnmount(() => {
           :chart-data="wasteChartData"
           :options="wasteChartOptions"
           :height="300"
+          @chart-click="handleWasteClick"
         />
         <div v-else class="view-loading">No waste data available</div>
+      </div>
+    </div>
+
+    <!-- Chart Detail Popup -->
+    <div v-if="chartDetailPopup?.show" class="chart-detail-overlay" @click="closeChartDetail">
+      <div class="chart-detail-card" @click.stop>
+        <button class="chart-detail-close" @click="closeChartDetail">&times;</button>
+        <div class="chart-detail-header">{{ chartDetailPopup.chartType }} Details</div>
+        <div class="chart-detail-body">
+          <div class="chart-detail-label">{{ chartDetailPopup.label }}</div>
+          <div class="chart-detail-value">{{ chartDetailPopup.value.toFixed(0) }} units</div>
+          <div class="chart-detail-percentage">{{ chartDetailPopup.percentage }} of total</div>
+        </div>
       </div>
     </div>
   </div>
@@ -427,6 +488,104 @@ onBeforeUnmount(() => {
   .oee-apq-display {
     flex-direction: column;
     gap: 12px;
+  }
+}
+
+/* Chart Detail Popup */
+.chart-detail-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+}
+
+.chart-detail-card {
+  background: var(--bg-card);
+  border: 2px solid var(--accent-cyan);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 90%;
+  position: relative;
+  animation: slideUp 0.3s ease;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 255, 0.3);
+}
+
+.chart-detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.8rem;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  transition: color 0.2s ease;
+}
+
+.chart-detail-close:hover {
+  color: var(--accent-red);
+}
+
+.chart-detail-header {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 20px;
+}
+
+.chart-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.chart-detail-label {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.chart-detail-value {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--accent-cyan);
+  text-shadow: var(--glow-cyan);
+}
+
+.chart-detail-percentage {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1rem;
+  color: var(--text-dim);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

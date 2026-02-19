@@ -3,6 +3,7 @@ import { ref, computed, onMounted, inject } from 'vue'
 import { useAppStore } from '@/stores/app'
 import type { Insight, Anomaly } from '@/types'
 import { SLEEPING_AGENT_MESSAGES } from '@/constants'
+import AgentModal from '@/components/modals/AgentModal.vue'
 
 const appStore = useAppStore()
 const agentPaused = ref(false)
@@ -12,6 +13,7 @@ const sleepingMessage = ref<string>(
 )
 const filterInput = ref('')
 const filtersExpanded = ref(false)
+const showAgentModal = ref(false)
 
 const sendAnomalyFilters = inject<(rules: string[]) => void>('sendAnomalyFilters')
 
@@ -30,8 +32,8 @@ const displayedInsights = computed(() => {
   if (selectedFactory !== 'ALL') {
     insights = insights.filter(insight => {
       // Check if insight has enterprise field
-      if ((insight as any).enterprise) {
-        return (insight as any).enterprise === selectedFactory
+      if (insight.enterprise) {
+        return insight.enterprise === selectedFactory
       }
       // Check if insight text/summary contains enterprise name
       const text = (insight.summary || insight.text || '').toLowerCase()
@@ -59,7 +61,7 @@ const anomalyCount = computed(() => {
 })
 
 function getModelName(insight: Insight): string {
-  const model = (insight as any).model?.toLowerCase() || ''
+  const model = insight.model?.toLowerCase() || ''
   if (model.includes('sonnet')) return 'Sonnet'
   if (model.includes('haiku')) return 'Haiku'
   if (model.includes('opus')) return 'Opus'
@@ -149,6 +151,11 @@ onMounted(async () => {
       <button class="agent-pause-btn" :class="{ paused: agentPaused }" @click="togglePause">
         <span>{{ agentPaused ? '▶ Resume' : '⏸ Pause' }}</span>
       </button>
+      <button class="agent-expand-btn" @click="showAgentModal = true" title="View All Insights">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+        </svg>
+      </button>
     </div>
 
     <!-- Tabs -->
@@ -227,7 +234,7 @@ onMounted(async () => {
           <span v-if="insight.anomalies?.length" style="color: var(--accent-red)">
             ⚠ {{ insight.anomalies.length }} anomalies ·
           </span>
-          Confidence: {{ (insight as any).confidence || 'N/A' }} ·
+          Confidence: {{ insight.confidence || 'N/A' }} ·
           Priority: {{ insight.severity || 'low' }} ·
           {{ formatTime(insight.timestamp) }}
         </div>
@@ -250,6 +257,14 @@ onMounted(async () => {
         <div class="anomaly-time">{{ formatTime(anomaly.timestamp) }}</div>
       </div>
     </div>
+
+    <!-- Agent Modal -->
+    <AgentModal
+      :show="showAgentModal"
+      :insights="appStore.insights"
+      :anomalies="appStore.anomalies"
+      @close="showAgentModal = false"
+    />
   </div>
 </template>
 
@@ -332,6 +347,25 @@ onMounted(async () => {
   background: rgba(255, 50, 50, 0.15);
   border-color: rgba(255, 50, 50, 0.5);
   color: var(--accent-red);
+}
+
+.agent-expand-btn {
+  background: none;
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 4px;
+  color: var(--accent-cyan);
+  padding: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.agent-expand-btn:hover {
+  background: rgba(0, 255, 255, 0.1);
+  border-color: var(--accent-cyan);
+  transform: scale(1.1);
 }
 
 .insight-tabs {

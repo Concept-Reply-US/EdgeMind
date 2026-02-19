@@ -11,8 +11,26 @@ const props = withDefaults(defineProps<{
   height: 380
 })
 
+const emit = defineEmits<{
+  'chart-click': [payload: { label: string; value: number; datasetIndex: number; index: number }]
+}>()
+
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let chartInstance: Chart<'bar'> | null = null
+
+function handleChartClick(_event: any, elements: any[]) {
+  if (elements.length > 0) {
+    const element = elements[0]
+    if (!element) return
+    const datasetIndex = element.datasetIndex
+    const index = element.index
+    const label = (props.chartData.labels?.[index] as string) || ''
+    const dataset = props.chartData.datasets[datasetIndex]
+    const value = (dataset?.data[index] as number) || 0
+
+    emit('chart-click', { label, value, datasetIndex, index })
+  }
+}
 
 function createChart() {
   if (!canvasRef.value) return
@@ -24,7 +42,8 @@ function createChart() {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      ...props.options
+      ...props.options,
+      onClick: handleChartClick
     }
   })
 }
@@ -33,7 +52,7 @@ watch(() => [props.chartData, props.options], () => {
   if (chartInstance) {
     chartInstance.data = props.chartData
     if (props.options) {
-      chartInstance.options = { responsive: true, maintainAspectRatio: false, ...props.options }
+      chartInstance.options = { responsive: true, maintainAspectRatio: false, ...props.options, onClick: handleChartClick }
     }
     chartInstance.update('none')
   } else {
