@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useOEE } from '@/composables/useOEE'
 import { useEquipment } from '@/composables/useEquipment'
@@ -49,6 +49,21 @@ function countEquipmentForSite(enterprise: string, site: string): EquipmentCount
   return counts
 }
 
+const equipmentCountsByKey = computed(() => {
+  const map = new Map<string, EquipmentCounts>()
+  for (const line of lines.value) {
+    const key = `${line.enterprise}/${line.site}`
+    if (!map.has(key)) {
+      map.set(key, countEquipmentForSite(line.enterprise, line.site))
+    }
+  }
+  return map
+})
+
+function getEquipCounts(enterprise: string, site: string): EquipmentCounts {
+  return equipmentCountsByKey.value.get(`${enterprise}/${site}`) ?? { running: 0, stopped: 0, faulted: 0, total: 0 }
+}
+
 async function fetchAndRender(): Promise<void> {
   try {
     error.value = null
@@ -63,8 +78,6 @@ async function fetchAndRender(): Promise<void> {
 
     if (linesData?.lines) {
       lines.value = [...linesData.lines].sort((a, b) => (b.oee ?? 0) - (a.oee ?? 0))
-    } else {
-      lines.value = []
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load line data'
@@ -120,21 +133,21 @@ onBeforeUnmount(() => {
         <div class="line-equipment-counts">
           <span
             class="equip-count equip-running"
-            :title="`Running: ${countEquipmentForSite(line.enterprise, line.site).running}`"
+            :title="`Running: ${getEquipCounts(line.enterprise, line.site).running}`"
           >
-            {{ countEquipmentForSite(line.enterprise, line.site).running }}
+            {{ getEquipCounts(line.enterprise, line.site).running }}
           </span>
           <span
             class="equip-count equip-stopped"
-            :title="`Stopped: ${countEquipmentForSite(line.enterprise, line.site).stopped}`"
+            :title="`Stopped: ${getEquipCounts(line.enterprise, line.site).stopped}`"
           >
-            {{ countEquipmentForSite(line.enterprise, line.site).stopped }}
+            {{ getEquipCounts(line.enterprise, line.site).stopped }}
           </span>
           <span
             class="equip-count equip-faulted"
-            :title="`Faulted: ${countEquipmentForSite(line.enterprise, line.site).faulted}`"
+            :title="`Faulted: ${getEquipCounts(line.enterprise, line.site).faulted}`"
           >
-            {{ countEquipmentForSite(line.enterprise, line.site).faulted }}
+            {{ getEquipCounts(line.enterprise, line.site).faulted }}
           </span>
         </div>
 
