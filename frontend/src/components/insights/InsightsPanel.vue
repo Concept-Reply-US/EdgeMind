@@ -2,9 +2,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import type { Insight, Anomaly } from '@/types'
+import { SLEEPING_AGENT_MESSAGES } from '@/constants'
 
 const appStore = useAppStore()
 const agentPaused = ref(false)
+const sleepingMessage = ref<string>(
+  SLEEPING_AGENT_MESSAGES[Math.floor(Math.random() * SLEEPING_AGENT_MESSAGES.length)] ||
+  'Agent on standby. Data collection continues.'
+)
 
 const emit = defineEmits<{
   'select-anomaly': [anomaly: Anomaly]
@@ -14,7 +19,23 @@ const activeTab = ref<'all' | 'anomalies'>('all')
 
 const displayedInsights = computed(() => {
   if (activeTab.value === 'anomalies') return []
-  return appStore.insights.slice().reverse().slice(0, 5)
+  let insights = appStore.insights.slice().reverse()
+
+  // Filter by enterprise if not ALL
+  const selectedFactory = appStore.selectedFactory
+  if (selectedFactory !== 'ALL') {
+    insights = insights.filter(insight => {
+      // Check if insight has enterprise field
+      if ((insight as any).enterprise) {
+        return (insight as any).enterprise === selectedFactory
+      }
+      // Check if insight text/summary contains enterprise name
+      const text = (insight.summary || insight.text || '').toLowerCase()
+      return text.includes(selectedFactory.toLowerCase())
+    })
+  }
+
+  return insights.slice(0, 5)
 })
 
 const displayedAnomalies = computed(() => {
@@ -106,7 +127,7 @@ onMounted(async () => {
     <!-- Sleeping Message -->
     <div v-if="!appStore.insightsEnabled" class="agent-insights" style="border-left-color: var(--accent-amber)">
       <div class="insight-text" style="opacity: 0.85; font-style: italic;">
-        😴 Agent on standby. Data collection continues.
+        {{ sleepingMessage }}
       </div>
       <div class="insight-meta">AI Insights: Disabled · MQTT data collection active</div>
     </div>

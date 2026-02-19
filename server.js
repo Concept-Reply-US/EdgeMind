@@ -11,6 +11,8 @@ const mqtt = require('mqtt');
 const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
 const WebSocket = require('ws');
 const express = require('express');
+const helmet = require('helmet');
+const cors = require('cors');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { writeApi, queryApi, parseTopicToInflux, writeSparkplugMetric } = require('./lib/influx/client');
@@ -163,6 +165,27 @@ if (CONFIG.cmms.enabled) {
 // Initialize Bedrock client
 const bedrockClient = new BedrockRuntimeClient({ region: CONFIG.bedrock.region });
 
+// Security middleware - helmet for CSP headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.googleapis.com", "https://fonts.gstatic.com"],
+      connectSrc: ["'self'", "ws:", "wss:"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      workerSrc: ["'self'", "blob:"]
+    }
+  },
+  crossOriginEmbedderPolicy: false // Disable to allow Google Fonts
+}));
+
+// CORS configuration - reflect requesting origin for dev/prod compatibility
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 
 // Serve static files (frontend HTML)
 // Only serve frontend build artifacts, not backend source code
@@ -2869,7 +2892,25 @@ const server = app.listen(PORT, () => {
   }
 });
 
-const wss = new WebSocket.Server({ server, path: '/ws' });
+// WebSocket origin validation
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://edge-mind.concept-reply-sandbox.com',
+  'https://dev-edge-mind.concept-reply-sandbox.com'
+];
+
+const wss = new WebSocket.Server({
+  server,
+  path: '/ws',
+  verifyClient: (info) => {
+    const origin = info.origin || info.req.headers.origin;
+    // Allow non-browser clients (curl, automated tools, etc.)
+    if (!origin) return true;
+    // Check if origin matches allowed list
+    return allowedOrigins.some(allowed => origin.startsWith(allowed));
+  }
+});
 
 // WebSocket connection handler
 wss.on('connection', (ws) => {

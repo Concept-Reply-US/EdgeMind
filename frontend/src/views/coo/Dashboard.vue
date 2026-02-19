@@ -90,6 +90,33 @@ const dataRate = computed(() => {
   return formatNumber(perMin) + '/min'
 })
 
+const equipmentSummary = computed(() => {
+  let running = 0
+  let idle = 0
+  let faulted = 0
+  let total = 0
+
+  appStore.equipmentStates.forEach((equipment) => {
+    // Filter by selected factory if not ALL
+    if (appStore.selectedFactory !== 'ALL' && equipment.enterprise !== appStore.selectedFactory) {
+      return
+    }
+
+    total++
+    const stateName = (equipment.state || '').toLowerCase()
+
+    if (stateName === 'running' || stateName === 'execute') {
+      running++
+    } else if (stateName === 'fault' || stateName === 'faulted') {
+      faulted++
+    } else {
+      idle++
+    }
+  })
+
+  return { running, idle, faulted, total }
+})
+
 async function refreshAll() {
   const [oeeResult, breakdownResult, wasteTrends, scrapByLine, quality] = await Promise.allSettled([
     fetchOEE(),
@@ -267,6 +294,26 @@ function onSelectAnomaly(anomaly: Anomaly) {
       </div>
     </div>
 
+    <!-- Equipment Summary Bar -->
+    <div class="equipment-summary">
+      <div class="equipment-summary-item">
+        <span class="equipment-count equipment-running">{{ equipmentSummary.running }}</span>
+        <span class="equipment-status-label">Running</span>
+      </div>
+      <div class="equipment-summary-item">
+        <span class="equipment-count equipment-idle">{{ equipmentSummary.idle }}</span>
+        <span class="equipment-status-label">Idle / Stopped</span>
+      </div>
+      <div class="equipment-summary-item">
+        <span class="equipment-count equipment-faulted">{{ equipmentSummary.faulted }}</span>
+        <span class="equipment-status-label">Faulted / Down</span>
+      </div>
+      <div class="equipment-summary-item">
+        <span class="equipment-count equipment-total">{{ equipmentSummary.total }}</span>
+        <span class="equipment-status-label">Total Equipment</span>
+      </div>
+    </div>
+
     <!-- Dashboard Grid -->
     <div class="dashboard-grid">
       <Card title="Overall Equipment Effectiveness" :span="6">
@@ -274,7 +321,7 @@ function onSelectAnomaly(anomaly: Anomaly) {
         <div class="oee-status">{{ oeeStatus }}</div>
       </Card>
 
-      <Card title="OEE Breakdown by Enterprise" :span="6">
+      <Card v-if="appStore.selectedFactory === 'ALL'" title="OEE Breakdown by Enterprise" :span="6">
         <BarChart :chart-data="oeeBreakdownData" :options="chartOptions" :height="280" />
       </Card>
 
@@ -483,12 +530,71 @@ function onSelectAnomaly(anomaly: Anomaly) {
   color: var(--text-dim);
 }
 
+.equipment-summary {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  justify-content: space-around;
+  background: var(--bg-card);
+  border: 1px solid rgba(0, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 15px 20px;
+}
+
+.equipment-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.equipment-count {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  padding: 5px 15px;
+  border-radius: 6px;
+  min-width: 50px;
+  text-align: center;
+}
+
+.equipment-running {
+  color: var(--accent-green);
+  background: rgba(16, 185, 129, 0.15);
+}
+
+.equipment-idle {
+  color: var(--accent-amber);
+  background: rgba(245, 158, 11, 0.15);
+}
+
+.equipment-faulted {
+  color: var(--accent-red);
+  background: rgba(239, 68, 68, 0.15);
+}
+
+.equipment-total {
+  color: var(--accent-cyan);
+  background: rgba(0, 255, 255, 0.15);
+}
+
+.equipment-status-label {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
 @media (max-width: 1024px) {
   .dashboard-grid {
     grid-template-columns: repeat(6, 1fr);
   }
 
   .metrics-bar {
+    flex-wrap: wrap;
+  }
+
+  .equipment-summary {
     flex-wrap: wrap;
   }
 }

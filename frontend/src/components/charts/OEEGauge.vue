@@ -10,7 +10,10 @@ const props = withDefaults(defineProps<{
 
 const radius = computed(() => props.size / 2 - 12)
 const circumference = computed(() => 2 * Math.PI * radius.value)
-const offset = computed(() => circumference.value - (props.value / 100) * circumference.value)
+const offset = computed(() => {
+  const clampedValue = Math.max(0, Math.min(100, props.value))
+  return circumference.value - (clampedValue / 100) * circumference.value
+})
 const center = computed(() => props.size / 2)
 
 const gaugeColor = computed(() => {

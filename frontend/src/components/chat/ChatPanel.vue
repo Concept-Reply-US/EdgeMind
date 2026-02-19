@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick, onMounted } from 'vue'
 import { useConnectionStore } from '@/stores/connection'
+import { escapeHtml } from '@/utils'
 
 const connectionStore = useConnectionStore()
 const messagesRef = ref<HTMLElement | null>(null)
@@ -10,6 +11,7 @@ const sending = ref(false)
 const showWelcome = ref(true)
 
 interface ChatMessage {
+  id: string
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
@@ -25,6 +27,53 @@ const suggestedQuestions = [
   "What is the status of Enterprise C batches?"
 ]
 
+function formatMarkdown(text: string): string {
+  // Escape HTML first to prevent XSS
+  let escaped = escapeHtml(text)
+
+  // Convert **bold** to <strong>
+  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+
+  // Convert *italic* to <em> (but not inside **bold** which is already converted)
+  escaped = escaped.replace(/(?<!\*)\*(?!\*)([^*]+)\*(?!\*)/g, '<em>$1</em>')
+
+  // Convert `code` to <code>
+  escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+  // Convert newlines to <br>
+  escaped = escaped.replace(/\n/g, '<br>')
+
+  // Convert lines starting with - or * to <ul><li>
+  const lines = escaped.split('<br>')
+  let inList = false
+  const processedLines: string[] = []
+
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (trimmed.startsWith('-&nbsp;') || trimmed.startsWith('*&nbsp;') ||
+        trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+      if (!inList) {
+        processedLines.push('<ul>')
+        inList = true
+      }
+      const content = trimmed.replace(/^[-*]\s*/, '').replace(/^[-*]&nbsp;/, '')
+      processedLines.push(`<li>${content}</li>`)
+    } else {
+      if (inList) {
+        processedLines.push('</ul>')
+        inList = false
+      }
+      processedLines.push(line)
+    }
+  }
+
+  if (inList) {
+    processedLines.push('</ul>')
+  }
+
+  return processedLines.join('<br>').replace(/<br><ul>/g, '<ul>').replace(/<\/ul><br>/g, '</ul>')
+}
+
 function askSuggested(question: string) {
   input.value = question
   sendMessage()
@@ -38,8 +87,8 @@ async function sendMessage() {
   sending.value = true
   input.value = ''
 
-  messages.value.push({ role: 'user', content: prompt })
-  messages.value.push({ role: 'assistant', content: '', streaming: true })
+  messages.value.push({ id: crypto.randomUUID(), role: 'user', content: prompt })
+  messages.value.push({ id: crypto.randomUUID(), role: 'assistant', content: '', streaming: true })
   chatHistory.value.push({ role: 'user', content: prompt })
 
   await nextTick()
@@ -53,7 +102,7 @@ async function sendMessage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         prompt,
-        sessionId: connectionStore.chatSessionId || 'session-' + Date.now(),
+        sessionId: connectionStore.chatSessionId || crypto.randomUUID(),
         messages: chatHistory.value.slice(0, -1)
       })
     })
@@ -97,12 +146,18 @@ async function sendMessage() {
           }
         }
       }
-      messages.value[assistantIndex] = { role: 'assistant', content: streamText, streaming: true }
+      const msg = messages.value[assistantIndex]
+      if (msg) {
+        messages.value[assistantIndex] = { ...msg, role: 'assistant', content: streamText, streaming: true }
+      }
       await nextTick()
       scrollToBottom()
     }
 
-    messages.value[assistantIndex] = { role: 'assistant', content: streamText }
+    const msg = messages.value[assistantIndex]
+    if (msg) {
+      messages.value[assistantIndex] = { ...msg, role: 'assistant', content: streamText, streaming: false }
+    }
     chatHistory.value.push({ role: 'assistant', content: streamText })
 
     // Keep history manageable
@@ -110,7 +165,10 @@ async function sendMessage() {
       chatHistory.value.splice(0, chatHistory.value.length - 20)
     }
   } catch {
-    messages.value[assistantIndex] = { role: 'assistant', content: 'Error: Could not reach assistant' }
+    const msg = messages.value[assistantIndex]
+    if (msg) {
+      messages.value[assistantIndex] = { ...msg, role: 'assistant', content: 'Error: Could not reach assistant', streaming: false }
+    }
   } finally {
     sending.value = false
   }
@@ -138,7 +196,7 @@ function togglePanel() {
 
 onMounted(() => {
   if (!connectionStore.chatSessionId) {
-    connectionStore.chatSessionId = 'session-' + Date.now()
+    connectionStore.chatSessionId = crypto.randomUUID()
   }
 })
 </script>
@@ -187,12 +245,12 @@ onMounted(() => {
 
             <!-- Messages -->
             <div
-              v-for="(msg, i) in messages"
-              :key="i"
+              v-for="msg in messages"
+              :key="msg.id"
               class="chat-message"
               :class="[msg.role, { streaming: msg.streaming }]"
             >
-              <div class="bubble">{{ msg.content || '...' }}</div>
+              <div class="bubble" v-html="formatMarkdown(msg.content || '...')"></div>
             </div>
           </div>
 
@@ -329,6 +387,33 @@ onMounted(() => {
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.chat-message .bubble :deep(code) {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85em;
+}
+
+.chat-message .bubble :deep(strong) {
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.chat-message .bubble :deep(em) {
+  font-style: italic;
+  opacity: 0.9;
+}
+
+.chat-message .bubble :deep(ul) {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.chat-message .bubble :deep(li) {
+  margin: 4px 0;
 }
 
 .chat-message.user {

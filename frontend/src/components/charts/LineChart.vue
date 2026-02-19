@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { ref, watch, onBeforeUnmount } from 'vue'
-import { Chart, registerables } from 'chart.js'
+import { Chart } from 'chart.js'
 import type { ChartData, ChartOptions } from 'chart.js'
-
-Chart.register(...registerables)
 
 const props = withDefaults(defineProps<{
   chartData: ChartData<'line'>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { watchEffect } from 'vue'
+import { ref, watchEffect } from 'vue'
 import { useRoute } from 'vue-router'
 import CommandBar from '@/components/CommandBar.vue'
 import Footer from '@/components/Footer.vue'
 import ChatPanel from '@/components/chat/ChatPanel.vue'
+import SettingsModal from '@/components/modals/SettingsModal.vue'
 import NotificationToast from '@/components/ui/NotificationToast.vue'
 import { useWebSocket } from '@/composables/useWebSocket'
 import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
@@ -11,6 +12,7 @@ import { usePersonaStore } from '@/stores/persona'
 
 const route = useRoute()
 const personaStore = usePersonaStore()
+const showSettings = ref(false)
 
 // Auto-connect WebSocket
 useWebSocket()
@@ -33,12 +35,13 @@ watchEffect(() => {
 </script>
 
 <template>
-  <CommandBar />
+  <CommandBar @toggle-settings="showSettings = !showSettings" />
   <div class="content">
     <RouterView />
   </div>
   <Footer />
   <ChatPanel />
+  <SettingsModal :show="showSettings" @close="showSettings = false" />
   <NotificationToast />
 </template>
 

@@ -10,6 +10,10 @@ const route = useRoute()
 const personaStore = usePersonaStore()
 const connectionStore = useConnectionStore()
 
+const emit = defineEmits<{
+  'toggle-settings': []
+}>()
+
 const personas = [
   {
     key: 'coo' as PersonaType,
@@ -126,6 +130,12 @@ function isActiveSubNav(routeName: string): boolean {
         <div class="status__dot" :style="{ background: connectionStore.isConnected ? 'var(--accent-green)' : 'var(--accent-red)' }"></div>
         <span>{{ connectionStore.isConnected ? 'SYSTEM ONLINE' : 'RECONNECTING...' }}</span>
       </div>
+      <button class="settings-btn" @click="emit('toggle-settings')" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 1v6m0 6v6m5.656-13.656l-4.242 4.242m-2.828 2.828l-4.242 4.242M23 12h-6m-6 0H1m17.656 5.656l-4.242-4.242m-2.828-2.828l-4.242-4.242"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -305,15 +315,25 @@ function isActiveSubNav(routeName: string): boolean {
     animation: pulse-dot 2s ease-in-out infinite;
 }
 
-.settings-icon {
+.settings-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+}
+
+.settings-btn svg {
     width: 20px;
     height: 20px;
     color: var(--text-dim);
-    cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.3s ease;
 }
 
-.settings-icon:hover {
+.settings-btn:hover svg {
     color: var(--accent-cyan);
     transform: rotate(45deg);
 }

@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import { Chart, registerables } from 'chart.js'
+import { Chart } from 'chart.js'
 import 'chartjs-adapter-date-fns'
-
-Chart.register(...registerables)
 
 const selectedTimeWindow = ref('shift')
 let refreshInterval: ReturnType<typeof setInterval> | null = null
+
+// Loading states for each chart
+const chartLoading = ref({
+  oee: true,
+  waste: true,
+  downtime: true,
+  wastePredictive: true,
+  oeeComponents: true
+})
 
 // Chart refs
 const oeeChartCanvas = ref<HTMLCanvasElement | null>(null)
@@ -78,6 +85,7 @@ function createOEEChart(data: any) {
   if (!canvas) return
 
   oeeChart = destroyChart(oeeChart, 'oee')
+  chartLoading.value.oee = false
   const oeeData = data?.data || {}
   const enterprises = Object.keys(oeeData)
   if (enterprises.length === 0) return
@@ -141,6 +149,7 @@ function createWasteChart(data: any) {
   if (!canvas) return
 
   wasteChart = destroyChart(wasteChart, 'waste')
+  chartLoading.value.waste = false
   const summary = data?.summary || {}
   const enterprises = Object.keys(summary)
   if (enterprises.length === 0) return
@@ -197,6 +206,7 @@ function createDowntimeParetoChart(data: any) {
   if (!canvas) return
 
   downtimeParetoChart = destroyChart(downtimeParetoChart, 'downtime')
+  chartLoading.value.downtime = false
   const paretoData = data?.paretoData || []
   if (paretoData.length === 0) return
 
@@ -257,6 +267,7 @@ function createWastePredictiveChart(data: any) {
   if (!canvas) return
 
   wastePredictiveChart = destroyChart(wastePredictiveChart, 'wastePred')
+  chartLoading.value.wastePredictive = false
   const byEnterprise = data?.byEnterprise || {}
   const hasData = Object.values(byEnterprise).some((ent: any) => ent.historical && ent.historical.length > 0)
   if (!hasData) return
@@ -346,6 +357,7 @@ function createOEEComponentsChart(data: any) {
   if (!canvas) return
 
   oeeComponentsChart = destroyChart(oeeComponentsChart, 'oeeComp')
+  chartLoading.value.oeeComponents = false
   const components = ['availability', 'performance', 'quality']
   const hasData = components.some(c => data?.[c]?.historical?.length > 0)
   if (!hasData) return
@@ -451,6 +463,13 @@ async function safeFetch(url: string, label: string) {
 }
 
 async function fetchAndRender() {
+  // Set all charts to loading
+  chartLoading.value.oee = true
+  chartLoading.value.waste = true
+  chartLoading.value.downtime = true
+  chartLoading.value.wastePredictive = true
+  chartLoading.value.oeeComponents = true
+
   const [oeeData, wasteData, _equipData, downtimeData, wastePredData, oeePredData] = await Promise.all([
     safeFetch('/api/oee/breakdown', 'OEE breakdown'),
     safeFetch('/api/waste/trends', 'Waste trends'),
@@ -460,11 +479,35 @@ async function fetchAndRender() {
     safeFetch(`/api/trends/oee-components?window=${selectedTimeWindow.value}&enterprise=ALL`, 'OEE components')
   ])
 
-  if (oeeData) createOEEChart(oeeData)
-  if (wasteData) createWasteChart(wasteData)
-  if (downtimeData) createDowntimeParetoChart(downtimeData)
-  if (wastePredData) createWastePredictiveChart(wastePredData)
-  if (oeePredData) createOEEComponentsChart(oeePredData)
+  if (oeeData) {
+    createOEEChart(oeeData)
+  } else {
+    chartLoading.value.oee = false
+  }
+
+  if (wasteData) {
+    createWasteChart(wasteData)
+  } else {
+    chartLoading.value.waste = false
+  }
+
+  if (downtimeData) {
+    createDowntimeParetoChart(downtimeData)
+  } else {
+    chartLoading.value.downtime = false
+  }
+
+  if (wastePredData) {
+    createWastePredictiveChart(wastePredData)
+  } else {
+    chartLoading.value.wastePredictive = false
+  }
+
+  if (oeePredData) {
+    createOEEComponentsChart(oeePredData)
+  } else {
+    chartLoading.value.oeeComponents = false
+  }
 }
 
 function selectTimeWindow(win: string) {
@@ -474,7 +517,7 @@ function selectTimeWindow(win: string) {
 
 onMounted(() => {
   fetchAndRender()
-  refreshInterval = setInterval(fetchAndRender, 60000)
+  refreshInterval = setInterval(fetchAndRender, 30000)
 })
 
 onBeforeUnmount(() => {
@@ -526,27 +569,37 @@ onBeforeUnmount(() => {
     <div class="trends-chart-grid">
       <div class="trend-chart-container">
         <h3 class="chart-title">OEE by Enterprise</h3>
-        <canvas ref="oeeChartCanvas"></canvas>
+        <div v-if="chartLoading.oee" class="chart-loading">Loading OEE data...</div>
+        <div v-else-if="!oeeChart" class="chart-empty">No OEE data available</div>
+        <canvas v-show="oeeChart" ref="oeeChartCanvas"></canvas>
       </div>
 
       <div class="trend-chart-container">
         <h3 class="chart-title">Waste Trends</h3>
-        <canvas ref="wasteChartCanvas"></canvas>
+        <div v-if="chartLoading.waste" class="chart-loading">Loading waste data...</div>
+        <div v-else-if="!wasteChart" class="chart-empty">No waste data available</div>
+        <canvas v-show="wasteChart" ref="wasteChartCanvas"></canvas>
       </div>
 
       <div class="trend-chart-container">
         <h3 class="chart-title">Downtime Pareto</h3>
-        <canvas ref="downtimeChartCanvas"></canvas>
+        <div v-if="chartLoading.downtime" class="chart-loading">Loading downtime data...</div>
+        <div v-else-if="!downtimeParetoChart" class="chart-empty">No downtime data available</div>
+        <canvas v-show="downtimeParetoChart" ref="downtimeChartCanvas"></canvas>
       </div>
 
       <div class="trend-chart-container">
         <h3 class="chart-title">Waste Predictive Analysis</h3>
-        <canvas ref="wastePredictiveChartCanvas"></canvas>
+        <div v-if="chartLoading.wastePredictive" class="chart-loading">Loading predictive data...</div>
+        <div v-else-if="!wastePredictiveChart" class="chart-empty">No predictive data available</div>
+        <canvas v-show="wastePredictiveChart" ref="wastePredictiveChartCanvas"></canvas>
       </div>
 
       <div class="trend-chart-container chart-card-wide">
         <h3 class="chart-title">OEE Components Forecast</h3>
-        <canvas ref="oeeComponentsChartCanvas"></canvas>
+        <div v-if="chartLoading.oeeComponents" class="chart-loading">Loading OEE components...</div>
+        <div v-else-if="!oeeComponentsChart" class="chart-empty">No OEE component data available</div>
+        <canvas v-show="oeeComponentsChart" ref="oeeComponentsChartCanvas"></canvas>
       </div>
     </div>
   </div>
@@ -650,6 +703,28 @@ onBeforeUnmount(() => {
 
 .chart-card-wide {
   grid-column: span 2;
+}
+
+.chart-loading,
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 20px;
+}
+
+.chart-loading {
+  color: var(--persona-color, var(--accent-cyan));
+  opacity: 0.7;
+}
+
+.chart-empty {
+  color: var(--text-dim);
+  opacity: 0.5;
 }
 
 @media (max-width: 1024px) {

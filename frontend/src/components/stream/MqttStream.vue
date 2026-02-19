@@ -23,7 +23,11 @@ const filteredMessages = computed(() => {
   if (activeFilter.value !== 'all') {
     msgs = msgs.filter(m => getEventType(m.topic) === activeFilter.value)
   }
-  return msgs.slice(-30)
+  // Add unique IDs to messages for v-for key
+  return msgs.slice(-30).map((msg, idx) => ({
+    ...msg,
+    _id: `${msg.topic}-${msg.timestamp || Date.now()}-${idx}`
+  }))
 })
 
 function formatTimestamp(ts?: string): string {
@@ -84,8 +88,8 @@ watch(() => appStore.messages.length, async () => {
       :class="{ paused: appStore.streamPaused }"
     >
       <div
-        v-for="(msg, i) in filteredMessages"
-        :key="i"
+        v-for="msg in filteredMessages"
+        :key="msg._id"
         class="stream-line"
       >
         <span class="stream-timestamp">[{{ formatTimestamp(msg.timestamp) }}]</span>

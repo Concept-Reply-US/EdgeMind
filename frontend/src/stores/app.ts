@@ -5,6 +5,7 @@ import type {
   EquipmentState, ThresholdSettings, CesmiiWorkOrder,
   InsightFilter, EventFilter
 } from '@/types'
+import { topicToMeasurement } from '@/utils'
 
 export const useAppStore = defineStore('app', () => {
   const messages = ref<MqttMessage[]>([])
@@ -158,11 +159,3 @@ export const useAppStore = defineStore('app', () => {
     addCesmiiWorkOrder
   }
 })
-
-function topicToMeasurement(topic: string): string {
-  const parts = topic.split('/')
-  if (parts.length >= 2) {
-    return parts.slice(-2).join('_')
-  }
-  return topic
-}
