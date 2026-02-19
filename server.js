@@ -61,6 +61,38 @@ const trendsModule = require('./lib/trends');
 const spcModule = require('./lib/spc');
 const productionModule = require('./lib/production');
 
+// ---------------------------------------------------------------------------
+// Response-level cache for expensive enterprise comparison endpoints (P0)
+// Avoids redundant InfluxDB queries when multiple frontend components hit the
+// same endpoints within a short window (e.g., page load with two parallel calls).
+// ---------------------------------------------------------------------------
+const RESPONSE_CACHE_TTL_MS = 60_000; // 60 seconds
+const responseCache = new Map(); // key -> { data, expiresAt }
+
+/**
+ * Read from the response cache. Returns null if missing or expired.
+ * @param {string} key - Cache key
+ * @returns {*|null} Cached value or null
+ */
+function readCache(key) {
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    responseCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+/**
+ * Write a value into the response cache with the default TTL.
+ * @param {string} key - Cache key
+ * @param {*} data - Value to cache
+ */
+function writeCache(key, data) {
+  responseCache.set(key, { data, expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS });
+}
+
 // Initialize services
 const app = express();
 
@@ -817,7 +849,12 @@ app.get('/api/oee', async (req, res) => {
  */
 app.get('/api/oee/breakdown', async (req, res) => {
   try {
+    // P0: Serve from cache if available (60s TTL)
+    const cached = readCache('oee:breakdown');
+    if (cached) return res.json(cached);
+
     const breakdown = await queryOEEBreakdown();
+    writeCache('oee:breakdown', breakdown);
     res.json(breakdown);
   } catch (error) {
     console.error('OEE breakdown query error:', error);
@@ -845,11 +882,59 @@ app.get('/api/factory/status', async (req, res) => {
       return res.status(400).json({ error: 'Invalid enterprise parameter' });
     }
 
+    // P0: Serve from cache if available (60s TTL, keyed by enterprise filter)
+    const cacheKey = `factory:status:${enterprise}`;
+    const cached = readCache(cacheKey);
+    if (cached) return res.json(cached);
+
     const status = await queryFactoryStatus(enterprise);
+    writeCache(cacheKey, status);
     res.json(status);
   } catch (error) {
     console.error('Factory status query error:', error);
     res.status(500).json({ error: 'Failed to query factory status' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/enterprise/comparison:
+ *   get:
+ *     operationId: getEnterpriseComparison
+ *     summary: Combined OEE breakdown and factory status in one request
+ *     description: >
+ *       Returns both the OEE breakdown by enterprise and the full hierarchical
+ *       factory status in a single round-trip. Replaces two parallel calls to
+ *       /api/oee/breakdown and /api/factory/status and uses the same 60s
+ *       response cache as those endpoints.
+ *     tags: [oee]
+ *     responses:
+ *       200:
+ *         description: Combined enterprise comparison data
+ *       500:
+ *         description: Server error
+ */
+// P1: Single combined endpoint — eliminates duplicate InfluxDB round-trips when
+// the frontend previously called /api/oee/breakdown and /api/factory/status in
+// parallel. Both sub-queries still run in parallel internally via Promise.all.
+app.get('/api/enterprise/comparison', async (req, res) => {
+  try {
+    const CACHE_KEY = 'enterprise:comparison';
+    const cached = readCache(CACHE_KEY);
+    if (cached) return res.json(cached);
+
+    // Run both expensive queries in parallel — no sequential blocking
+    const [oeeBreakdown, factoryStatus] = await Promise.all([
+      queryOEEBreakdown(),
+      queryFactoryStatus('ALL')
+    ]);
+
+    const result = { oeeBreakdown, factoryStatus };
+    writeCache(CACHE_KEY, result);
+    res.json(result);
+  } catch (error) {
+    console.error('Enterprise comparison query error:', error);
+    res.status(500).json({ error: 'Failed to query enterprise comparison data' });
   }
 });
 
@@ -2890,6 +2975,12 @@ const server = app.listen(PORT, () => {
     const { analysisConfig } = require('./lib/state').factoryState;
     console.log(`🤖 AI Insights: ENABLED (Tier 1: ${analysisConfig.checkIntervalMs / 1000}s, Tier 3: ${analysisConfig.summaryIntervalMs / 1000}s)`);
   }
+
+  // P3: Pre-warm schema cache so the first user request never pays cold-start cost.
+  // Fire-and-forget — errors are logged but don't affect server startup.
+  refreshSchemaCache()
+    .then(() => console.log('[startup] Schema cache pre-warmed'))
+    .catch((err) => console.warn('[startup] Schema cache pre-warm failed (non-fatal):', err.message));
 });
 
 // WebSocket origin validation
